@@ -1,8 +1,8 @@
 //
 //  ContentView.swift
-//  AtSight Watch App
+//  AtSightWatchh Watch App
 //
-//  Created by Leena on 01/09/2025.
+//  Created by lona on 15/04/2025.
 //
 
 import SwiftUI
@@ -20,5 +20,5 @@ struct ContentView: View {
 }
 
 #Preview {
-    ContentView()
+    WelcomeView()
 }

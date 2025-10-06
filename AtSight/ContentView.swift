@@ -1,23 +1,42 @@
 //
 //  ContentView.swift
-//  AtSight
+//  Atsight
 //
-//  Created by Leena on 01/09/2025.
+//  Created by lona on 28/01/2025.
 //
 
 import SwiftUI
 
 struct ContentView: View {
     var body: some View {
-        VStack {
-            Image(systemName: "globe")
-                .imageScale(.large)
-                .foregroundStyle(.tint)
-            Text("Hello, world!")
+        NavigationStack {
+            ZStack {
+                Color("CustomBackground")
+                    .ignoresSafeArea()
+
+                VStack {
+                    Spacer()
+
+                    Image("logo")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 340)
+                        .padding()
+
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                // Full-screen transparent button to navigate\
+                NavigationLink(destination: WelcomePage1()) {
+                    Color.clear
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
         }
-        .padding()
     }
 }
+
 
 #Preview {
     ContentView()
