@@ -72,6 +72,14 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         // Register for notifications
         UNUserNotificationCenter.current().delegate = self
         
+        // ✅ Register custom notification category for "Watch Removed"
+        let okAction = UNNotificationAction(identifier: "ACK_WATCH_REMOVED", title: "OK", options: [])
+        let category = UNNotificationCategory(identifier: "WATCH_REMOVED_CATEGORY",
+                                              actions: [okAction],
+                                              intentIdentifiers: [],
+                                              options: [])
+        UNUserNotificationCenter.current().setNotificationCategories([category])
+        
         return true
     }
     
@@ -83,5 +91,19 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         
         // Show banner + play sound even when app is open
         completionHandler([.banner, .sound])
+    }
+    
+    // ✅ Handle when user taps "OK" on the Watch Removed alert
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void) {
+        
+        if response.actionIdentifier == "ACK_WATCH_REMOVED" {
+            UserDefaults.standard.set(true, forKey: "stopHeartRateMonitoring")
+            print("✅ Parent tapped OK — stopHeartRateMonitoring flag set")
+        }
+        
+        completionHandler()
     }
 }

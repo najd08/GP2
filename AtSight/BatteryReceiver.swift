@@ -4,6 +4,7 @@
 //
 //  Created by Najd Alsabi on 07/09/2025.
 //
+
 import UIKit
 import WatchConnectivity
 import FirebaseFirestore
@@ -99,13 +100,22 @@ final class BatteryReceiver: NSObject, WCSessionDelegate {
         // (Currently we only push threshold iPhone -> Watch.)
     }
 
-    // MARK: - Unified handler (lowBattery + watch_location)
+    // MARK: - Unified handler (lowBattery + watch_location + heartRate + watch_removed)
     private func handleIncoming(_ dict: [String: Any]) {
         guard let type = dict["type"] as? String else { return }
 
         switch type {
         case "lowBattery":
             handleLowBatteryPayload(dict)
+
+        case "heart_rate":
+            handleHeartRatePayload(dict)
+
+        case "watch_removed":
+            handleWatchRemovedPayload(dict)
+
+        case "heartRate":
+            handleHeartRatePayload(dict) // ✅ kept your old case for backward compatibility
 
         case "watch_location":
             // 🔎 Log raw payload for debugging
@@ -153,12 +163,6 @@ final class BatteryReceiver: NSObject, WCSessionDelegate {
                         print("✅ Live location saved to Firestore for childId:", cid)
                     }
                 }
-
-            // (Optional) also append to history if you want LocationHistoryView to show it immediately:
-            // db.collection("guardians").document(guardianID)
-            //   .collection("children").document(cid)
-            //   .collection("locationHistory")
-            //   .addDocument(data: liveDoc)
 
         default:
             print("ℹ️ Unhandled WC type:", type)
@@ -215,7 +219,101 @@ final class BatteryReceiver: NSObject, WCSessionDelegate {
         }
     }
 
-    // MARK: - Receive Voice File from Watch (previously in PhoneConnectivity)
+    // MARK: - 🔥 Heart Rate / Watch Removal Handler
+    private func handleHeartRatePayload(_ dict: [String: Any]) {
+        guard let bpm = dict["bpm"] as? Double,
+              let childName = dict["childName"] as? String,
+              let childId = dict["childId"] as? String else { return }
+
+        print("❤️ Received heartRate:", bpm, "from", childName)
+
+        // 1. Store timestamp
+        let now = Date()
+        UserDefaults.standard.set(now, forKey: "lastHeartRateTime_\(childId)")
+
+        // 2. Save to Firestore
+        guard let guardianID = Auth.auth().currentUser?.uid else { return }
+        let db = Firestore.firestore()
+        let doc: [String: Any] = [
+            "bpm": bpm,
+            "timestamp": Timestamp(date: Date())
+        ]
+        db.collection("guardians")
+            .document(guardianID)
+            .collection("children")
+            .document(childId)
+            .collection("heartRate")
+            .addDocument(data: doc) { e in
+                if let e = e {
+                    print("❌ Firestore error (heart rate):", e.localizedDescription)
+                } else {
+                    print("✅ Heart rate saved for", childName)
+                }
+            }
+
+        // 3. If bpm < 20 → possible watch removal
+        if bpm < 20 {
+            triggerWatchRemovedNotification(childName: childName)
+            saveWatchRemovedNotification(childName: childName)
+        }
+    }
+
+    // MARK: - Handle explicit “watch removed” payload
+    private func handleWatchRemovedPayload(_ dict: [String: Any]) {
+        guard
+            let childName = dict["childName"] as? String,
+            let childId = dict["childId"] as? String
+        else { return }
+
+        print("🚨 Watch removed payload received for", childName)
+
+        triggerWatchRemovedNotification(childName: childName)
+        saveWatchRemovedNotification(childName: childName)
+    }
+
+    // MARK: - Firestore save (watch removed)
+    private func saveWatchRemovedNotification(childName: String) {
+        guard let guardianID = Auth.auth().currentUser?.uid else { return }
+        let db = Firestore.firestore()
+        let data: [String: Any] = [
+            "title": "Watch Removed",
+            "body": "\(childName)’s watch may have been removed.",
+            "timestamp": Timestamp(date: Date()),
+            "isSafeZone": false,
+            "type": "watch_removed"
+        ]
+        db.collection("guardians")
+            .document(guardianID)
+            .collection("notifications")
+            .document("\(childName)_watchRemoved")
+            .setData(data, merge: true) { error in
+                if let error = error {
+                    print("❌ Firestore save error (watch removed):", error.localizedDescription)
+                } else {
+                    print("💾 Watch removal notification saved/updated")
+                }
+            }
+    }
+
+    // MARK: - Local notification (watch removed)
+    private func triggerWatchRemovedNotification(childName: String) {
+        let content = UNMutableNotificationContent()
+        content.title = "Watch Removed"
+        content.body = "\(childName)’s watch may have been removed. ⚠️"
+        content.sound = .default
+        content.categoryIdentifier = "WATCH_REMOVED_CATEGORY" // ✅ attach category so "OK" action shows
+
+        let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
+        UNUserNotificationCenter.current().add(request) { err in
+            if let err = err {
+                print("❌ Local notification error:", err.localizedDescription)
+            } else {
+                print("🔔 Watch removed local notification triggered")
+            }
+        }
+    }
+
+    // MARK: - Receive Voice File from Watch
     func session(_ session: WCSession, didReceive file: WCSessionFile) {
         let tmpURL = file.fileURL
         let meta   = file.metadata ?? [:]

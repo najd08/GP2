@@ -1,5 +1,7 @@
+//
 //  HomeView_Watch.swift
 //  AtSight (WatchKit Extension)
+//
 
 import SwiftUI
 import WatchConnectivity
@@ -26,32 +28,33 @@ struct HomeView_Watch: View {
             return
         }
 
-        // تأكد أن WCSession مفعّل (احتياطيًا)
+        // Ensure WCSession is active
         if WCSession.isSupported(), WCSession.default.activationState == .notActivated {
             WatchConnectivityManager.shared.activate()
         }
 
-        // ابدأ الخدمات
+        // Start services
         let childName = pairing.childName.isEmpty
             ? (UserDefaults.standard.string(forKey: "childDisplayName") ?? "Child")
             : pairing.childName
 
         BatteryMonitor.shared.startMonitoring(for: childName)
         WatchLocationManager.shared.startLiveUpdates()
+        HeartRateMonitor.shared.startMonitoring(for: childName) // ✅ Added heart rate service
+
         print("✅ [Home] services started (\(context)) for childId=\(childId) name=\(childName)")
     }
 
     private func stopServices(context: String) {
         WatchLocationManager.shared.stopLiveUpdates()
-        // BatteryMonitor: نخليه شغال عادة مادام التطبيق شغال. لو حاب توقفه:
-        // BatteryMonitor.shared.stop()
+        HeartRateMonitor.shared.stopMonitoring() // ✅ Stop heart rate when leaving
         print("🛑 [Home] services stopped (\(context))")
     }
 
     var body: some View {
         NavigationStack {
             ZStack {
-                // خلفية بتدرّج ناعم
+                // Background gradient
                 LinearGradient(gradient: Gradient(colors: [bgTop, bgBottom]),
                                startPoint: .topLeading,
                                endPoint: .bottomTrailing)
@@ -68,7 +71,7 @@ struct HomeView_Watch: View {
 
                         Spacer(minLength: 8)
 
-                        // شعار داخل دائرة
+                        // Logo
                         Image("Image")
                             .resizable()
                             .scaledToFit()
@@ -81,7 +84,7 @@ struct HomeView_Watch: View {
                     .padding(.horizontal, 16)
                     .padding(.top, 6)
 
-                    // MARK: Contact Card (يفتح VoiceChatView)
+                    // MARK: Contact Card → VoiceChat
                     ContactRow_Watch(
                         name: pairing.parentName.isEmpty ? "Parent" : pairing.parentName
                     ) {
@@ -145,10 +148,12 @@ struct HomeView_Watch: View {
             .onDisappear {
                 stopServices(context: "onDisappear")
             }
-            // ✅ لو تغيرت حالة الربط بعد ما تفتح الصفحة (مثلاً ربطت الآن)
             .onChange(of: pairing.linked) { new in
-                if new { startServicesIfPossible(context: "onChange(linked=true)") }
-                else   { stopServices(context: "onChange(linked=false)") }
+                if new {
+                    startServicesIfPossible(context: "onChange(linked=true)")
+                } else {
+                    stopServices(context: "onChange(linked=false)")
+                }
             }
         }
     }
@@ -170,7 +175,7 @@ struct ContactRow_Watch: View {
     var body: some View {
         Button(action: onChatTapped) {
             HStack(spacing: 10) {
-                // أيقونة الميكروفون
+                // Mic icon
                 ZStack {
                     Circle()
                         .fill(buttons.opacity(0.20))
