@@ -60,10 +60,28 @@ extension PhoneConnectivity {
     
     /// Send a pairing/link PIN (reply expected by default)
     func sendLink(pin: String, completion: @escaping (Result<[String: Any], Error>) -> Void) {
-        let payload: [String: Any] = ["type": "link", "pin": pin]
+        // ✅ Get guardian ID from Firebase Auth (the current parent)
+        let guardianId = Auth.auth().currentUser?.uid ?? "unknownGuardian"
+        
+        // يمكنك لاحقاً جلب childId و childName من الواجهة أو قاعدة البيانات
+        let selectedChildId = UserDefaults.standard.string(forKey: "currentChildId") ?? ""
+        let selectedChildName = UserDefaults.standard.string(forKey: "childDisplayName") ?? ""
+        let parentName = Auth.auth().currentUser?.displayName ?? "Parent"
+        
+        // ✅ Build message payload to send to the watch
+        let payload: [String: Any] = [
+            "type": "link",
+            "pin": pin,
+            "guardianId": guardianId,
+            "childId": selectedChildId,
+            "childName": selectedChildName,
+            "parentName": parentName
+        ]
+        
+        print("📡 Sending link message to Watch:", payload)
         sendMessage(payload, expectReply: true, completion: completion)
     }
-    
+
     /// Generic sender that either forwards to BatteryReceiver or uses WCSession directly
     func sendMessage(
         _ message: [String: Any],

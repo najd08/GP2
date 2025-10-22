@@ -86,12 +86,15 @@ struct ParentLinkView: View {
         }
 
         isSending = true
+        let guardianId = Auth.auth().currentUser?.uid ?? "unknownGuardian"
+
         let payload: [String: Any] = [
             "type": "link",
             "pin": digitsOnly,
             "childName": childName,
             "parentName": parentName,
-            "childId": childId
+            "childId": childId,
+            "guardianId": guardianId   // ✅ أضفنا هذا السطر
         ]
 
         WCSession.default.sendMessage(

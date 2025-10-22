@@ -1,7 +1,7 @@
 
 
 import Foundation
-import SwiftUICore
+import SwiftUI
 
 struct Child: Identifiable{
     var id: String // This will store the Firestore document ID

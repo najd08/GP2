@@ -1,9 +1,13 @@
+//
 //  WatchConnectivityManager-merged.swift
 //  AtSight (WatchKit Extension)
+//
 //  Merged to keep BOTH features:
 //  - Battery threshold sync via ApplicationContext
 //  - One-time GPS fix sent to iPhone on successful link
 //  - ✅ Store childId/parent/child names for later live location sends
+//  - ✅ Now also stores guardianId for API use
+//
 
 import WatchConnectivity
 import Combine
@@ -47,7 +51,7 @@ final class WatchConnectivityManager: NSObject, WCSessionDelegate, ObservableObj
     // ✅ Battery threshold sync via ApplicationContext
     func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String : Any]) {
         if let threshold = applicationContext["lowBatteryThreshold"] as? Int {
-            BatteryMonitor.shared.updateThreshold(threshold)   // تأكد أن هالدالة موجودة في BatteryMonitor
+            BatteryMonitor.shared.updateThreshold(threshold)
             print("🔋 [WCM] Updated lowBatteryThreshold on watch:", threshold)
         } else {
             print("ℹ️ [WCM] applicationContext without threshold:", applicationContext)
@@ -67,7 +71,7 @@ final class WatchConnectivityManager: NSObject, WCSessionDelegate, ObservableObj
             let incomingPIN = message["pin"] as? String
             let childName   = message["childName"] as? String ?? ""
             let parentName  = message["parentName"] as? String ?? ""
-            let childId     = message["childId"] as? String ?? "" // قد يكون فاضي
+            let childId     = message["childId"] as? String ?? ""
 
             Task { @MainActor in
                 let currentPIN = PairingState.shared.pin
@@ -79,15 +83,15 @@ final class WatchConnectivityManager: NSObject, WCSessionDelegate, ObservableObj
                 }
 
                 if pin == currentPIN {
-                    // 1) Reply first
+                    // 1️⃣ Reply first
                     reply?("linked".asReply())
 
-                    // 2) Update UI state
+                    // 2️⃣ Update UI state
                     PairingState.shared.childName  = childName
                     PairingState.shared.parentName = parentName
                     PairingState.shared.linked     = true
 
-                    // 3) ✅ Persist identifiers for later (live location, UI)
+                    // 3️⃣ ✅ Persist identifiers for later (live location, UI)
                     if !childId.isEmpty {
                         UserDefaults.standard.set(childId, forKey: "currentChildId")
                     }
@@ -98,7 +102,13 @@ final class WatchConnectivityManager: NSObject, WCSessionDelegate, ObservableObj
                         UserDefaults.standard.set(childName, forKey: "childDisplayName")
                     }
 
-                    // 4) One-time GPS fix and send to iPhone
+                    // ✅ Store guardianId if received from iPhone
+                    if let guardianId = message["guardianId"] as? String {
+                        UserDefaults.standard.set(guardianId, forKey: "guardianId")
+                        print("🧩 [WCM] Stored guardianId:", guardianId)
+                    }
+
+                    // 4️⃣ One-time GPS fix and send to iPhone
                     WatchLocationManager.shared.requestOnce { loc in
                         var payload: [String: Any] = ["type": "watch_location"]
                         if !childId.isEmpty { payload["childId"] = childId }
@@ -115,16 +125,13 @@ final class WatchConnectivityManager: NSObject, WCSessionDelegate, ObservableObj
                         if s.isReachable {
                             s.sendMessage(payload, replyHandler: nil) {
                                 print("⚠️ [WCM] sendMessage error:", $0.localizedDescription)
-                                s.transferUserInfo(payload) // fallback
+                                s.transferUserInfo(payload)
                             }
                         } else {
-                            s.transferUserInfo(payload) // will deliver later
+                            s.transferUserInfo(payload)
                         }
                         print("📤 [WCM] sent initial fix:", payload)
                     }
-
-                    // ملاحظة: تشغيل live updates يتم عادة من HomeView_Watch.onAppear()
-                    // WatchLocationManager.shared.startLiveUpdates()
 
                 } else {
                     reply?("wrong_pin".asReply())

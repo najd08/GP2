@@ -3,11 +3,11 @@
 //  AtSight (watchOS target)
 //
 //  Created by Leena on 07/09/2025.
+//  Updated on 22/10/2025: sends streetName + zoneName with coordinate array
 //
 
 import Foundation
 import CoreLocation
-import WatchConnectivity
 
 final class WatchLocationManager: NSObject, CLLocationManagerDelegate {
     static let shared = WatchLocationManager()
@@ -15,6 +15,7 @@ final class WatchLocationManager: NSObject, CLLocationManagerDelegate {
     private let manager = CLLocationManager()
     private var onceHandler: ((CLLocation?) -> Void)?
     private var timer: Timer?
+    private let geocoder = CLGeocoder()
     
     // Retry state
     private var retryCount = 0
@@ -80,19 +81,7 @@ final class WatchLocationManager: NSObject, CLLocationManagerDelegate {
                     print("⚠️ [WLM] no location in live tick")
                     return
                 }
-                
-                let childId = UserDefaults.standard.string(forKey: "currentChildId") ?? ""
-                var payload: [String: Any] = [
-                    "type": "watch_location",
-                    "lat": loc.coordinate.latitude,
-                    "lon": loc.coordinate.longitude,
-                    "acc": loc.horizontalAccuracy,
-                    "ts": loc.timestamp.timeIntervalSince1970
-                ]
-                if !childId.isEmpty {
-                    payload["childId"] = childId
-                }
-                self?.sendLocationPayload(payload)
+                self?.sendLocationToAPI(loc)
             }
         }
         
@@ -107,20 +96,34 @@ final class WatchLocationManager: NSObject, CLLocationManagerDelegate {
         print("🛑 [WLM] stopLiveUpdates()")
     }
     
-    // MARK: - Send helper
-    private func sendLocationPayload(_ payload: [String: Any]) {
-        let s = WCSession.default
-        if s.activationState == .activated, s.isReachable {
-            s.sendMessage(payload, replyHandler: nil) { err in
-                print("⚠️ [WLM] sendMessage error:", err.localizedDescription, "→ fallback to transferUserInfo")
-                s.transferUserInfo(payload)
+    // MARK: - Send location via API
+    private func sendLocationToAPI(_ loc: CLLocation) {
+        let childId = UserDefaults.standard.string(forKey: "currentChildId") ?? "unknown"
+        let guardianId = UserDefaults.standard.string(forKey: "guardianId") ?? "unknown"
+        
+        // 🔹 نجيب اسم الشارع باستخدام CLGeocoder
+        geocoder.reverseGeocodeLocation(loc) { placemarks, error in
+            var streetName = "Unknown"
+            if let placemark = placemarks?.first {
+                streetName = placemark.thoroughfare ?? placemark.name ?? "Unknown"
             }
-        } else {
-            s.transferUserInfo(payload)
+            
+            // ✅ نفس التنسيق المطلوب
+            let payload: [String: Any] = [
+                "guardianId": guardianId,
+                "childId": childId,
+                "coordinate": [loc.coordinate.latitude, loc.coordinate.longitude],
+                "isSafeZone": true,
+                "timestamp": loc.timestamp.timeIntervalSince1970,
+                "zoneName": "Initial",
+                "streetName": streetName
+            ]
+            
+            APIHelper.shared.post(to: API.uploadLocation, body: payload)
+            print("📤 [WLM] Sent live location via API:", payload)
         }
-        print("📤 [WLM] sent live location:", payload)
     }
-    
+
     // MARK: - CLLocationManagerDelegate
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         switch manager.authorizationStatus {
@@ -141,7 +144,7 @@ final class WatchLocationManager: NSObject, CLLocationManagerDelegate {
     
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         if let loc = locations.last {
-            print("📍 [WLM] got location: \(loc.coordinate.latitude),\(loc.coordinate.longitude) ±\(loc.horizontalAccuracy)m")
+            print("📍 [WLM] got location: \(loc.coordinate.latitude), \(loc.coordinate.longitude) ±\(loc.horizontalAccuracy)m")
             completeOnce(loc)
             manager.stopUpdatingLocation()
         } else {
