@@ -2,12 +2,8 @@
 //  HomeAndChildDetail.swift
 //  Atsight
 //
-//  Final merged version:
-//  - Uses AddZonePage(childID:) (Riyam’s fix)
-//  - Includes ZoneAlertSimulation link
-//  - Dark mode safe back button
-//  - LazyVGrid for navigation links
-//  - Debug “simulate linking” section
+//  Updated by Leon on 27/10/2025
+//  Simplified: Removed chat and voice message sections, added VoiceChatPhone button only.
 //
 
 import SwiftUI
@@ -23,15 +19,12 @@ struct ChildDetailView: View {
     @State private var guardianID: String = Auth.auth().currentUser?.uid ?? ""
     @State private var viewRefreshToken = UUID()
 
-    // 2 flexible columns for the grid
     let columns = [GridItem(.flexible()), GridItem(.flexible())]
 
-    // Linked state
     private var isLinked: Bool {
         UserDefaults.standard.bool(forKey: "linked_\(child.id)")
     }
 
-    // Parent display name (from email prefix)
     private var parentDisplayName: String {
         if let email = Auth.auth().currentUser?.email {
             return email.components(separatedBy: "@").first ?? "Parent"
@@ -47,7 +40,7 @@ struct ChildDetailView: View {
                     presentationMode.wrappedValue.dismiss()
                 }) {
                     Image(systemName: "chevron.left")
-                        .foregroundColor(Color("BlackFont")) // dark mode safe
+                        .foregroundColor(Color("BlackFont"))
                         .font(.system(size: 20, weight: .bold))
                 }
 
@@ -113,24 +106,36 @@ struct ChildDetailView: View {
                         )
                     }
 
-                    // Debug: simulate linking
+                    // Debug simulate link
                     Text("Simulate linking for testing")
                         .font(.caption)
                         .foregroundColor(.gray)
                         .padding(.top, 20)
                         .onTapGesture {
                             UserDefaults.standard.set(true, forKey: "linked_\(child.id)")
-                            viewRefreshToken = UUID() // force refresh
+                            viewRefreshToken = UUID()
                         }
 
                     Spacer()
                 }
             } else {
-                // MARK: Linked Grid
+                // MARK: Linked Grid (Simplified)
                 ScrollView {
                     LazyVGrid(columns: columns, spacing: 20) {
-                        NavigationLink(destination: ParentChildChatView(child: child, parentName: parentDisplayName)) {
-                            gridButtonContent(icon: "bubble.left.and.bubble.right.fill", title: "Chat", color: Color("Buttons"))
+
+                        // 🎙️ Voice Chat button → passes guardianID + childId + childName
+                        NavigationLink(
+                            destination: VoiceChatPhone(
+                                guardianId: guardianID,
+                                childId: child.id,
+                                childName: child.name
+                            )
+                        ) {
+                            gridButtonContent(
+                                icon: "waveform.circle.fill",
+                                title: "Voice Chat",
+                                color: Color("ColorPurple")
+                            )
                         }
 
                         NavigationLink(destination: ChildLocationView(child: child)) {
@@ -169,7 +174,7 @@ struct ChildDetailView: View {
         }
     }
 
-    // MARK: Grid Button
+    // MARK: - Grid Button
     @ViewBuilder
     private func gridButtonContent(icon: String, title: String, color: Color) -> some View {
         VStack {
@@ -189,6 +194,7 @@ struct ChildDetailView: View {
         .shadow(radius: 10)
     }
 }
+
 
 // MARK: - HomeView
 struct HomeView: View {
@@ -313,248 +319,6 @@ struct HomeView: View {
     }
 }
 
-// MARK: - ParentChildChatView
-struct ParentChildChatView: View {
-    let child: Child
-    let parentName: String
-
-    @State private var messages: [ChatMessage] = []
-    @State private var listener: ListenerRegistration?
-    @State private var textDraft: String = ""
-    @StateObject private var audio = URLAudioPlayer()
-
-    var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Text("Chat with \(child.name)")
-                    .font(.headline)
-                    .foregroundColor(Color("BlackFont"))
-                Spacer()
-            }
-            .padding()
-            .background(Color("BgColor"))
-
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(spacing: 8) {
-                        ForEach(messages) { msg in
-                            if msg.type == .text {
-                                TextBubble(
-                                    text: msg.text ?? "",
-                                    isMine: msg.sender == "parent",
-                                    timestamp: msg.timestamp
-                                )
-                                .id(msg.id)
-                            } else if msg.type == .voice {
-                                VoiceBubble(
-                                    isMine: msg.sender == "parent",
-                                    duration: msg.duration ?? 0,
-                                    timestamp: msg.timestamp,
-                                    isPlaying: audio.isPlaying(url: msg.downloadURL),
-                                    playPause: { audio.toggle(urlString: msg.downloadURL) }
-                                )
-                                .id(msg.id)
-                            }
-                        }
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.top, 8)
-                }
-                .onChange(of: messages.count) { _ in
-                    if let last = messages.last { withAnimation { proxy.scrollTo(last.id, anchor: .bottom) } }
-                }
-            }
-
-            HStack(spacing: 8) {
-                TextField("Type a message…", text: $textDraft)
-                    .textFieldStyle(.roundedBorder)
-                    .disableAutocorrection(true)
-
-                Button {
-                    sendText()
-                } label: {
-                    Image(systemName: "paperplane.fill")
-                        .font(.system(size: 16, weight: .semibold))
-                }
-                .disabled(textDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            }
-            .padding(12)
-            .background(Color("BgColor"))
-        }
-        .background(Color("BgColor").ignoresSafeArea())
-        .navigationBarTitleDisplayMode(.inline)
-        .onAppear(perform: startListening)
-        .onDisappear(perform: stopListening)
-    }
-
-    private func startListening() {
-        let db = Firestore.firestore()
-        listener = db.collection("messages")
-            .whereField("childId", isEqualTo: child.id)
-            .order(by: "timestamp", descending: false)
-            .addSnapshotListener { snap, _ in
-                guard let docs = snap?.documents else { return }
-                messages = docs.compactMap { d in
-                    let data = d.data()
-                    let typeStr = (data["type"] as? String) ?? "text"
-                    let type: ChatMessage.Kind = (typeStr == "voice") ? .voice : .text
-
-                    return ChatMessage(
-                        id: d.documentID,
-                        type: type,
-                        sender: (data["sender"] as? String) ?? "watch",
-                        text: data["text"] as? String,
-                        duration: data["duration"] as? Double,
-                        downloadURL: data["downloadURL"] as? String,
-                        timestamp: (data["timestamp"] as? Timestamp)?.dateValue() ?? Date()
-                    )
-                }
-            }
-    }
-
-    private func stopListening() {
-        listener?.remove(); listener = nil
-        audio.stopAll()
-    }
-
-    private func sendText() {
-        let msg = textDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !msg.isEmpty else { return }
-        textDraft = ""
-
-        let db = Firestore.firestore()
-        db.collection("messages").addDocument(data: [
-            "type": "text",
-            "childId": child.id,
-            "sender": "parent",
-            "text": msg,
-            "timestamp": FieldValue.serverTimestamp()
-        ])
-    }
-}
-
-// MARK: - Models & UI
-struct ChatMessage: Identifiable {
-    enum Kind { case text, voice }
-    let id: String
-    let type: Kind
-    let sender: String
-    let text: String?
-    let duration: Double?
-    let downloadURL: String?
-    let timestamp: Date
-}
-
-struct TextBubble: View {
-    let text: String
-    let isMine: Bool
-    let timestamp: Date
-
-    var body: some View {
-        VStack(alignment: isMine ? .trailing : .leading, spacing: 4) {
-            HStack {
-                if isMine { Spacer() }
-                Text(text)
-                    .font(.body)
-                    .foregroundColor(isMine ? .white : Color("BlackFont"))
-                    .padding(.vertical, 8)
-                    .padding(.horizontal, 12)
-                    .background(
-                        RoundedRectangle(cornerRadius: 16)
-                            .fill(isMine ? Color("Blue") : Color("BgColor"))
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 16)
-                            .stroke(isMine ? Color.clear : Color("ColorGray").opacity(0.4), lineWidth: 1)
-                    )
-                if !isMine { Spacer() }
-            }
-            Text(Self.formatter.string(from: timestamp))
-                .font(.caption2)
-                .foregroundColor(Color("ColorGray"))
-                .padding(isMine ? .trailing : .leading, 6)
-        }
-    }
-
-    static let formatter: DateFormatter = {
-        let f = DateFormatter()
-        f.timeStyle = .short
-        return f
-    }()
-}
-
-struct VoiceBubble: View {
-    let isMine: Bool
-    let duration: Double
-    let timestamp: Date
-    let isPlaying: Bool
-    let playPause: () -> Void
-
-    var body: some View {
-        VStack(alignment: isMine ? .trailing : .leading, spacing: 4) {
-            HStack {
-                if isMine { Spacer() }
-                HStack(spacing: 8) {
-                    Button(action: playPause) {
-                        Image(systemName: isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                            .font(.system(size: 22))
-                    }
-                    Text(Self.formatDuration(duration))
-                        .font(.footnote)
-                        .foregroundColor(.secondary)
-                }
-                .padding(.vertical, 8)
-                .padding(.horizontal, 12)
-                .background(
-                    RoundedRectangle(cornerRadius: 16)
-                        .fill(isMine ? Color("Blue") : Color("BgColor"))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16)
-                        .stroke(isMine ? Color.clear : Color("ColorGray").opacity(0.4), lineWidth: 1)
-                )
-                if !isMine { Spacer() }
-            }
-            Text(TextBubble.formatter.string(from: timestamp))
-                .font(.caption2)
-                .foregroundColor(Color("ColorGray"))
-                .padding(isMine ? .trailing : .leading, 6)
-        }
-    }
-
-    private static func formatDuration(_ sec: Double) -> String {
-        let s = Int(sec.rounded())
-        return String(format: "%02d:%02d", s/60, s%60)
-    }
-}
-
-// MARK: - Audio Player
-final class URLAudioPlayer: ObservableObject {
-    @Published private var currentURL: String?
-    private var player: AVPlayer?
-
-    func isPlaying(url: String?) -> Bool {
-        guard let url, url == currentURL, let p = player else { return false }
-        return p.rate > 0
-    }
-
-    func toggle(urlString: String?) {
-        guard let urlString, let url = URL(string: urlString) else { return }
-        if isPlaying(url: urlString) {
-            player?.pause()
-        } else {
-            player = AVPlayer(url: url)
-            currentURL = urlString
-            player?.play()
-        }
-    }
-
-    func stopAll() {
-        player?.pause()
-        player = nil
-        currentURL = nil
-    }
-}
 
 #Preview("Home") {
     HomeView(selectedChild: .constant(nil), expandedChild: .constant(nil)).environmentObject(AppState())

@@ -397,6 +397,7 @@
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "This app uses your heart rate data to monitor the child’s well-being in real time.";
 				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = Always;
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "We use your location to keep your parent informed.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "This app needs microphone access to record and send voice messages.";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
 				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = gp.Finalproject.AtSight;
 				INFOPLIST_PREPROCESS = YES;
@@ -435,6 +436,7 @@
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "This app uses your heart rate data to monitor the child’s well-being in real time.";
 				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = Always;
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "We use your location to keep your parent informed.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "This app needs microphone access to record and send voice messages.";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
 				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = gp.Finalproject.AtSight;
 				INFOPLIST_PREPROCESS = YES;
@@ -473,6 +475,7 @@
 				INFOPLIST_KEY_LSApplicationCategoryType = "";
 				INFOPLIST_KEY_NSCameraUsageDescription = "We use the camera to scan the watch QR code.";
 				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = Always;
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "This app needs microphone access to record and send voice messages.";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
@@ -510,6 +513,7 @@
 				INFOPLIST_KEY_LSApplicationCategoryType = "";
 				INFOPLIST_KEY_NSCameraUsageDescription = "We use the camera to scan the watch QR code.";
 				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = Always;
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "This app needs microphone access to record and send voice messages.";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";

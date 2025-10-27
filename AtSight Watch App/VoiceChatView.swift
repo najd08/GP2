@@ -2,360 +2,222 @@
 //  VoiceChatView.swift
 //  AtSight (WatchKit Extension)
 //
+//  Updated by Leon on 27/10/2025
+//  Now fetches guardianId, childId, and names dynamically from UserDefaults
+//
 
 import SwiftUI
 import AVFoundation
-import WatchConnectivity
 
-// MARK: - Model لعرض الفويسات محليًا
-struct VoiceMessage: Identifiable, Equatable {
-    let id = UUID()
-    let isSender: Bool
-    let timestamp: Date
-    let localURL: URL?
-    let duration: TimeInterval
-}
-
-// MARK: - الصفحة (مفعّلة بالتسجيل والإرسال)
 struct VoiceChatView: View {
-    @StateObject private var recorder = WatchAudioRecorder()
-    @StateObject private var player   = SimpleAudioPlayer()
-    @StateObject private var outbox   = WatchConnectivityOutbox()
-
+    @State private var recorder: AVAudioRecorder?
+    @State private var player: AVPlayer?
     @State private var isRecording = false
-    @State private var goHome = false
-    @State private var messages: [VoiceMessage] = []
+    @State private var audioURL: URL?
+    @State private var timer: Timer?
+    @State private var isPlaying = false
+    @State private var lastFetchedURL: String?
 
-    // بدّلي هذي القيم حسب نظامك (PairingState/UserDefaults)
-    private let parentName: String = (UserDefaults.standard.string(forKey: "parentDisplayName") ?? "Mom")
-    private let childId: String    = (UserDefaults.standard.string(forKey: "currentChildId") ?? "unknownChild")
+    // ✅ IDs و الأسماء تُجلب تلقائيًا من UserDefaults
+    @State private var guardianId: String = ""
+    @State private var childId: String = ""
+    @State private var childName: String = ""
+    @State private var parentName: String = ""
 
     var body: some View {
-        GeometryReader { geometry in
+        VStack(spacing: 12) {
+            
+            // MARK: - Header
+            HStack(spacing: 8) {
+                Image(systemName: "person.circle.fill")
+                    .resizable()
+                    .frame(width: 28, height: 28)
+                    .foregroundColor(.blue)
+                Text(parentName.isEmpty ? "Parent" : parentName)
+                    .font(.system(size: 16, weight: .medium))
+                Spacer()
+            }
+            .padding(.horizontal)
+            .padding(.top, 4)
+            
+            Spacer()
+            
+            // MARK: - Mic Button
             ZStack {
-                Color.white.ignoresSafeArea()
-
-                VStack(spacing: 12) {
-                    // Header
-                    HStack {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 14, weight: .medium))
-                            .foregroundColor(.black)
-                            .onTapGesture { goHome = true }
-
-                        Spacer()
-
-                        HStack(spacing: 4) {
-                            Text(parentName)
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundColor(.black)
-
-                            Image(systemName: "person.crop.circle.fill")
-                                .resizable()
-                                .frame(width: 20, height: 20)
-                                .foregroundColor(.gray)
-                        }
-
-                        Spacer()
+                Circle()
+                    .fill(isRecording ? Color.red : Color.green.opacity(0.8))
+                    .frame(width: 80, height: 80)
+                    .shadow(radius: 5)
+                    .overlay(
+                        Image(systemName: "mic.fill")
+                            .font(.system(size: 32))
+                            .foregroundColor(.white)
+                    )
+                    .onTapGesture {
+                        isRecording ? stopRecording() : startRecording()
                     }
-                    .padding(.horizontal, 12)
-
-                    // الرسائل الصوتية (محلية لعرض آخر ما سُجّل)
-                    ScrollView {
-                        VStack(spacing: 8) {
-                            ForEach(messages) { msg in
-                                VoiceMessageBubble(
-                                    isSender: msg.isSender,
-                                    timestamp: timeText(msg.timestamp),
-                                    durationText: durationText(msg.duration),
-                                    playAction: {
-                                        if let url = msg.localURL { player.play(url: url) }
-                                    },
-                                    isPlaying: player.isPlaying
-                                )
-                            }
-                        }
-                        .padding(.horizontal, 8)
-                    }
-
-                    Spacer()
-
-                    // زر التسجيل (ضغط مطوّل يبدأ/ينهي)
-                    HStack {
-                        Spacer()
-
-                        ZStack {
-                            Circle()
-                                .fill(isRecording ? Color.red : Color("button"))
-                                .frame(width: isRecording ? 60 : 40,
-                                       height: isRecording ? 60 : 40)
-                                .shadow(color: (isRecording ? Color.red : Color("button")).opacity(0.4),
-                                        radius: isRecording ? 10 : 0)
-
-                            Image(systemName: "mic.fill")
-                                .resizable()
-                                .scaledToFit()
-                                .frame(width: 16, height: 16)
-                                .foregroundColor(.white)
-                        }
-                        .offset(y: isRecording ? -10 : 0)
-                        .animation(.easeInOut(duration: 0.2), value: isRecording)
-                        .gesture(
-                            LongPressGesture(minimumDuration: 0.1)
-                                .onChanged { _ in
-                                    guard !isRecording else { return }
-                                    isRecording = true
-                                    recorder.start(childId: childId) { ok, err in
-                                        if !ok { print("❌ Start record error:", err ?? "unknown") }
-                                    }
-                                }
-                                .onEnded { _ in
-                                    guard isRecording else { return }
-                                    isRecording = false
-                                    recorder.stop { url, dur in
-                                        guard let url = url, dur > 0.1 else { return }
-
-                                        // أضف رسالة للواجهة
-                                        messages.append(
-                                            VoiceMessage(isSender: true,
-                                                         timestamp: Date(),
-                                                         localURL: url,
-                                                         duration: dur)
-                                        )
-
-                                        // أرسل الملف للآيفون مع بيانات بسيطة
-                                        outbox.sendVoiceMessage(fileURL: url, metadata: [
-                                            "type": "voice",
-                                            "childId": childId,
-                                            "sender": "watch",
-                                            "duration": "\(dur)",
-                                            "timestamp": "\(Date().timeIntervalSince1970)"
-                                        ])
-                                    }
-                                }
-                        )
-
-                        Spacer()
-                    }
-                    .padding(.bottom, 24)
-
-                    // الرجوع
-                    NavigationLink(destination: HomeView_Watch(), isActive: $goHome) {
-                        EmptyView()
-                    }
-                    .hidden()
-                }
-                .frame(width: geometry.size.width,
-                       height: geometry.size.height,
-                       alignment: .top)
+                    .scaleEffect(isRecording ? 1.2 : 1.0)
+                    .animation(.easeInOut(duration: 0.2), value: isRecording)
             }
+            
+            Spacer()
         }
-        .onAppear { outbox.activate() } // تفعيل اتصال الساعة بالآيفون
-        .navigationBarBackButtonHidden(true)
-    }
-
-    // MARK: Helpers
-    private func durationText(_ sec: TimeInterval) -> String {
-        let s = Int(sec.rounded())
-        return String(format: "%02d:%02d", s/60, s%60)
-    }
-    private func timeText(_ date: Date) -> String {
-        let df = DateFormatter()
-        df.dateStyle = .none
-        df.timeStyle = .short
-        return df.string(from: date)
-    }
-}
-
-// MARK: - فقاعة رسالة صوتية مع زر تشغيل
-struct VoiceMessageBubble: View {
-    var isSender: Bool
-    var timestamp: String
-    var durationText: String
-    var playAction: () -> Void
-    var isPlaying: Bool
-
-    var body: some View {
-        VStack(alignment: isSender ? .trailing : .leading, spacing: 2) {
-            HStack {
-                if isSender { Spacer() }
-
-                HStack(spacing: 6) {
-                    Button(action: playAction) {
-                        Image(systemName: isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                            .resizable()
-                            .frame(width: 16, height: 16)
-                            .foregroundColor(isSender ? .white : .gray)
-                    }
-                    .buttonStyle(.plain)
-
-                    Image(systemName: "waveform")
-                        .resizable()
-                        .scaledToFit()
-                        .frame(height: 14)
-                        .foregroundColor(isSender ? .white : .gray)
-
-                    Text(durationText)
-                        .font(.system(size: 10))
-                        .foregroundColor(isSender ? .white : .gray)
-                }
-                .padding(.vertical, 4)
-                .padding(.horizontal, 8)
-                .background(
-                    RoundedRectangle(cornerRadius: 18)
-                        .fill(isSender ? Color.blue : Color.gray.opacity(0.2))
-                )
-                .frame(maxWidth: 110)
-
-                if !isSender { Spacer() }
-            }
-
-            Text(timestamp)
-                .font(.system(size: 9))
-                .foregroundColor(.gray)
-                .padding(isSender ? .trailing : .leading, 12)
+        .onAppear {
+            // ✅ جلب القيم من UserDefaults
+            fetchIDsFromDefaults()
+            // بدء التحديث الدوري
+            startAutoFetch()
         }
-        .padding(.horizontal, 8)
+        .onDisappear {
+            timer?.invalidate()
+        }
     }
-}
-
-// MARK: - Recorder (watchOS)
-final class WatchAudioRecorder: NSObject, ObservableObject {
-    @Published var isRecording: Bool = false
-    @Published var currentDuration: TimeInterval = 0
-
-    private var recorder: AVAudioRecorder?
-    private var timer: Timer?
-
-    func start(childId: String, completion: @escaping (Bool, String?) -> Void) {
+    
+    // MARK: - Start Recording
+    private func startRecording() {
+        let session = AVAudioSession.sharedInstance()
         do {
-            let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playAndRecord, mode: .default, options: [.allowBluetooth])
-            try session.setActive(true, options: .notifyOthersOnDeactivation)
-
-            let url = Self.newFileURL(childId: childId)
-            let settings: [String: Any] = [
-                AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
-                AVSampleRateKey: 44100,
-                AVNumberOfChannelsKey: 1,
-                AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue
-            ]
-
-            recorder = try AVAudioRecorder(url: url, settings: settings)
-            recorder?.prepareToRecord()
-            let ok = recorder?.record() ?? false
-            isRecording = ok
-            currentDuration = 0
-
-            if ok {
-                timer?.invalidate()
-                timer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in
-                    self?.currentDuration = self?.recorder?.currentTime ?? 0
+            try session.setCategory(.playAndRecord, mode: .default)
+            try session.setActive(true)
+            session.requestRecordPermission { granted in
+                guard granted else {
+                    print("🚫 Mic permission denied")
+                    return
                 }
-                completion(true, nil)
-            } else {
-                completion(false, "Failed to start recording")
+                
+                let url = FileManager.default.temporaryDirectory.appendingPathComponent("watch_record.m4a")
+                let settings: [String: Any] = [
+                    AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
+                    AVSampleRateKey: 44100,
+                    AVNumberOfChannelsKey: 1,
+                    AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue
+                ]
+                
+                do {
+                    recorder = try AVAudioRecorder(url: url, settings: settings)
+                    recorder?.record()
+                    audioURL = url
+                    DispatchQueue.main.async {
+                        isRecording = true
+                    }
+                    print("🎙️ Recording started")
+                } catch {
+                    print("❌ Recorder error:", error.localizedDescription)
+                }
             }
         } catch {
-            completion(false, error.localizedDescription)
+            print("❌ Audio session error:", error.localizedDescription)
         }
     }
-
-    func stop(completion: @escaping (URL?, TimeInterval) -> Void) {
-        timer?.invalidate()
-        timer = nil
-
-        guard let recorder = recorder else {
-            isRecording = false
-            completion(nil, 0)
-            return
-        }
-
-        recorder.stop()
-        let url = recorder.url
-        let dur = recorder.currentTime
-
-        self.recorder = nil
+    
+    // MARK: - Stop & Auto Upload
+    private func stopRecording() {
+        recorder?.stop()
         isRecording = false
-        completion(url, dur)
+        guard let url = audioURL else { return }
+        print("✅ Recording stopped, uploading…")
+        uploadToAPI(fileURL: url)
     }
-
-    private static func newFileURL(childId: String) -> URL {
-        let ts = Int(Date().timeIntervalSince1970)
-        let fn = "voice_\(childId)_\(ts).m4a"
-        return FileManager.default.temporaryDirectory.appendingPathComponent(fn)
-    }
-}
-
-// MARK: - Player بسيط
-final class SimpleAudioPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
-    @Published var isPlaying: Bool = false
-    private var player: AVAudioPlayer?
-
-    func play(url: URL) {
-        if isPlaying { stop() }
-        do {
-            player = try AVAudioPlayer(contentsOf: url)
-            player?.delegate = self
-            player?.prepareToPlay()
-            player?.play()
-            isPlaying = true
-        } catch {
-            print("❌ audio play error:", error.localizedDescription)
-        }
-    }
-
-    func stop() {
-        player?.stop()
-        player = nil
-        isPlaying = false
-    }
-
-    func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
-        isPlaying = false
-    }
-}
-
-// MARK: - WatchConnectivity (إرسال الملف للآيفون)
-final class WatchConnectivityOutbox: NSObject, ObservableObject, WCSessionDelegate {
-    func activate() {
-        guard WCSession.isSupported() else { return }
-        let s = WCSession.default
-        s.delegate = self
-        s.activate()
-    }
-
-    func sendVoiceMessage(fileURL: URL, metadata: [String: Any]) {
-        // ✅ Fix: isPaired is unavailable on watchOS; use conditional compilation.
-        #if os(iOS)
-        guard WCSession.default.isPaired else {
-            print("⚠️ iPhone not paired")
+    
+    // MARK: - Upload Voice
+    private func uploadToAPI(fileURL: URL, retryCount: Int = 0) {
+        guard !guardianId.isEmpty, !childId.isEmpty else {
+            print("⚠️ Missing guardianId or childId — cannot upload")
             return
         }
-        #elseif os(watchOS)
-        guard WCSession.default.activationState == .activated else {
-            print("⚠️ WCSession not activated")
+
+        guard let data = try? Data(contentsOf: fileURL) else { return }
+        let base64 = data.base64EncodedString()
+
+        guard let url = URL(string: "https://uploadvoicemessageapi-7gq4boqq6a-uc.a.run.app") else { return }
+
+        let body: [String: Any] = [
+            "guardianId": guardianId,
+            "childId": childId,
+            "sender": "watch",
+            "audioBase64": base64,
+            "duration": recorder?.currentTime ?? 3.0,
+            "ts": Date().timeIntervalSince1970
+        ]
+
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.addValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: body)
+
+        URLSession.shared.dataTask(with: req) { data, resp, err in
+            if let err = err as? URLError, err.code == .networkConnectionLost, retryCount < 3 {
+                print("⚠️ Connection lost, retrying (\(retryCount + 1))...")
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                    uploadToAPI(fileURL: fileURL, retryCount: retryCount + 1)
+                }
+                return
+            }
+
+            if let err = err {
+                print("❌ Upload failed:", err.localizedDescription)
+                return
+            }
+
+            if let http = resp as? HTTPURLResponse {
+                print("✅ Uploaded with status:", http.statusCode)
+            }
+        }.resume()
+    }
+
+    // MARK: - Auto Fetch & Play Incoming Messages
+    private func startAutoFetch() {
+        timer = Timer.scheduledTimer(withTimeInterval: 8, repeats: true) { _ in
+            fetchLatestMessage()
+        }
+    }
+
+    private func fetchLatestMessage() {
+        guard !guardianId.isEmpty, !childId.isEmpty else {
+            print("⚠️ Missing IDs, skipping fetch")
             return
         }
-        guard WCSession.default.isReachable else {
-            print("⚠️ iPhone not reachable")
-            return
-        }
-        #endif
 
-        WCSession.default.transferFile(fileURL, metadata: metadata)
-        print("📤 sent file:", fileURL.lastPathComponent, "meta:", metadata)
+        guard let url = URL(string:
+            "https://getvoicemessagesapi-7gq4boqq6a-uc.a.run.app?guardianId=\(guardianId)&childId=\(childId)&limit=1"
+        ) else { return }
+
+        URLSession.shared.dataTask(with: url) { data, _, error in
+            if let error = error {
+                print("❌ Fetch error:", error.localizedDescription)
+                return
+            }
+            guard let data,
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]],
+                  let latest = json.first,
+                  let audioURL = latest["audioURL"] as? String,
+                  let sender = latest["sender"] as? String,
+                  sender == "phone" else { return }
+
+            if audioURL != lastFetchedURL {
+                lastFetchedURL = audioURL
+                print("🎧 New message detected, playing…")
+                DispatchQueue.main.async {
+                    playAudio(from: audioURL)
+                }
+            }
+        }.resume()
     }
 
-    // MARK: WCSessionDelegate
-    func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {
-        if let e = error { print("WC activate error:", e.localizedDescription) }
+    private func playAudio(from urlString: String) {
+        guard let url = URL(string: urlString) else { return }
+        player = AVPlayer(url: url)
+        player?.play()
+    }
+
+    // MARK: - Fetch from UserDefaults
+    private func fetchIDsFromDefaults() {
+        guardianId = UserDefaults.standard.string(forKey: "guardianId") ?? ""
+        childId = UserDefaults.standard.string(forKey: "currentChildId") ?? ""
+        childName = UserDefaults.standard.string(forKey: "childDisplayName") ?? ""
+        parentName = UserDefaults.standard.string(forKey: "parentDisplayName") ?? ""
+        print("⌚️ [VoiceChatView] Loaded IDs from defaults → guardianId: \(guardianId), childId: \(childId)")
     }
 }
- 
-// ✅ Live Preview
-#Preview {
-    NavigationStack {
-        VoiceChatView()
-    }
-}
+
+#Preview { VoiceChatView() }
