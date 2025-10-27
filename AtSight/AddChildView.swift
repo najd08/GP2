@@ -10,16 +10,16 @@ import FirebaseFirestore
 import FirebaseAuth
 
 struct AddChildView: View {
-    @Environment(\.presentationMode) var presentationMode
+    @Environment(\.dismiss) var dismiss
     @State private var selectedGender: String? = nil
     @State private var showNamePage = false
-    var fetchChildrenCallback: (() -> Void)?  // Add callback for refreshing children list
+    var fetchChildrenCallback: (() -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 30) {
             // Back Button
             HStack {
-                Button(action: { presentationMode.wrappedValue.dismiss() }) {
+                Button(action: { dismiss() }) {
                     Image(systemName: "chevron.left")
                         .foregroundColor(Color("BlackFont"))
                         .font(.system(size: 20, weight: .bold))
@@ -32,28 +32,25 @@ struct AddChildView: View {
             Text("What is your child's gender?")
                 .font(.title)
                 .bold()
-                .foregroundColor(Color("BlackFont"))
                 .padding(.horizontal, 5)
+                .padding(.leading,10)
+            
 
-            // Gender Selection (Circles with Labels)
+            // Gender Selection
             VStack(spacing: 70) {
                 GenderOptionView(
                     gender: "Boy",
                     color: .blue,
                     isSelected: selectedGender == "Boy"
-                ) {
-                    selectedGender = "Boy"
-                }
+                ) { selectedGender = "Boy" }
 
                 GenderOptionView(
                     gender: "Girl",
                     color: .pink,
                     isSelected: selectedGender == "Girl"
-                ) {
-                    selectedGender = "Girl"
-                }
+                ) { selectedGender = "Girl" }
             }
-            .frame(maxWidth: .infinity) // Centering the options
+            .frame(maxWidth: .infinity)
             .padding(.horizontal)
             .padding(.top, 60)
 
@@ -76,19 +73,18 @@ struct AddChildView: View {
             }
             .padding(.bottom, 30)
             .fullScreenCover(isPresented: $showNamePage) {
-                AddChildNameView(selectedGender: selectedGender ?? "", fetchChildrenCallback: fetchChildrenCallback)  // Pass callback to the next view
-                    .onDisappear {
-                        // Ensure we dismiss properly after adding the child
-                        presentationMode.wrappedValue.dismiss()
-                    }
+                AddChildNameView(
+                    selectedGender: selectedGender ?? "",
+                    fetchChildrenCallback: fetchChildrenCallback,
+                    onFinish: { dismiss() } // ✅ Return to HomeView
+                )
             }
         }
         .navigationBarBackButtonHidden(true)
-        .background(Color("BgColor").ignoresSafeArea()) // ✅ Page background
     }
 }
 
-// Gender Option View
+// MARK: - Gender Option View
 struct GenderOptionView: View {
     let gender: String
     let color: Color
@@ -124,38 +120,43 @@ struct GenderOptionView: View {
 
             Text(gender)
                 .font(.title3)
-                .foregroundColor(Color("BlackFont")) // ✅ black text -> BlackFont
+                .foregroundColor(Color("BlackFont"))
         }
         .frame(maxWidth: .infinity)
     }
 }
 
+// MARK: - Add Child Name View
 struct AddChildNameView: View {
     let selectedGender: String
-    @State private var childName = ""
-    @Environment(\.presentationMode) var presentationMode
-    @State private var isLoading = false
-    @State private var showDuplicateNameAlert = false
-    @State private var showSuccessAlert = false  // ✅ New state for success
-
     var fetchChildrenCallback: (() -> Void)?
+    var onFinish: (() -> Void)? // ✅ trigger when done
+
+    @State private var childName = ""
+    @State private var isLoading = false
+    @State private var alertType: AlertType? = nil
+
+    enum AlertType: Identifiable {
+        case duplicate
+        case success
+        var id: Int { hashValue }
+    }
+
+    @Environment(\.dismiss) var dismiss
 
     var body: some View {
         ZStack {
-            // ✅ Page background
-            Color("BgColor").ignoresSafeArea()
-
-            // Bubble Background overlay (kept)
             BubbleBackground(color: selectedGender == "Boy" ? .blue : .pink)
 
             VStack(alignment: .leading, spacing: 30) {
                 // Back Button
                 HStack {
-                    Button(action: { presentationMode.wrappedValue.dismiss() }) {
+                    Button(action: { dismiss() }) {
                         Image(systemName: "chevron.left")
-                            .foregroundColor(Color("BlackFont")) // ✅ black text -> BlackFont
+                            .foregroundColor(.primary)
                             .font(.system(size: 22, weight: .medium))
                             .padding(8)
+                            .padding(.top,-65)
                     }
                     Spacer()
                 }
@@ -166,28 +167,23 @@ struct AddChildNameView: View {
                 Text("What is your child's name?")
                     .font(.title)
                     .bold()
-                    .foregroundColor(Color("BlackFont")) // ✅ black text -> BlackFont
+                    .foregroundColor(.primary)
                     .padding(.horizontal)
                     .padding(.top, 10)
                     .padding(.bottom, 20)
+                    .padding(.leading,10)
 
                 // Text Field
-                TextField(
-                    text: $childName,
-                    prompt: Text("enter your name") // ✅ exact phrase
-                        .foregroundColor(Color("ColorGray")) // ✅ placeholder color
-                ) {
-                    // onEditingChanged/commit handlers not needed here
-                }
-                .foregroundColor(Color("BlackFont")) // ✅ typed text color
-                .padding()
-                .background(Color.white)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 20)
-                        .stroke(selectedGender == "Boy" ? Color.blue.opacity(0.5) : Color.pink.opacity(0.5), lineWidth: 2)
-                )
-                .shadow(color: .gray.opacity(0.15), radius: 3, x: 0, y: 2)
-                .padding(.horizontal, 40)
+                TextField("Enter name", text: $childName)
+                    .padding()
+                    .background(Color.white)
+                    .cornerRadius(20)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 20)
+                            .stroke(selectedGender == "Boy" ? Color.blue.opacity(0.5) : Color.pink.opacity(0.5), lineWidth: 2)
+                    )
+                    .shadow(color: .gray.opacity(0.15), radius: 3, x: 0, y: 2)
+                    .padding(.horizontal, 40)
 
                 Spacer()
 
@@ -217,28 +213,31 @@ struct AddChildNameView: View {
                 .padding(.bottom, 63)
             }
         }
-        .edgesIgnoringSafeArea(.all)
-        .alert(isPresented: $showDuplicateNameAlert) {
-            Alert(
-                title: Text("Duplicate Name"),
-                message: Text("You already have a child with this name. Please choose a different name."),
-                dismissButton: .default(Text("OK"))
-            )
-        }
-        .alert(isPresented: $showSuccessAlert) {
-            Alert(
-                title: Text("Child Added"),
-                message: Text("\(childName) has been successfully added."),
-                dismissButton: .default(Text("OK")) {
-                    presentationMode.wrappedValue.dismiss()
-                }
-            )
+        // ✅ Unified alert logic
+        .alert(item: $alertType) { alert in
+            switch alert {
+            case .duplicate:
+                return Alert(
+                    title: Text("Duplicate Name"),
+                    message: Text("You already have a child with this name."),
+                    dismissButton: .default(Text("OK"))
+                )
+            case .success:
+                return Alert(
+                    title: Text("Child Added"),
+                    message: Text("\(childName) has been successfully added."),
+                    dismissButton: .default(Text("OK")) {
+                        dismiss()       // Close AddChildNameView
+                        onFinish?()     // Close AddChildView → return to Home
+                    }
+                )
+            }
         }
     }
 
+    // MARK: - Firestore Logic
     func handleSubmit() {
         isLoading = true
-
         guard let guardianID = Auth.auth().currentUser?.uid else {
             print("No guardian logged in")
             isLoading = false
@@ -251,45 +250,68 @@ struct AddChildNameView: View {
         // Step 1: Check for duplicate name
         childrenRef.whereField("name", isEqualTo: childName).getDocuments { snapshot, error in
             if let error = error {
-                print("Error checking for duplicates: \(error.localizedDescription)")
-                isLoading = false
+                print("Error checking duplicates: \(error.localizedDescription)")
+                DispatchQueue.main.async { isLoading = false }
                 return
             }
 
             if let documents = snapshot?.documents, !documents.isEmpty {
-                // Name already exists
-                showDuplicateNameAlert = true
-                isLoading = false
+                DispatchQueue.main.async {
+                    alertType = .duplicate
+                    isLoading = false
+                }
                 return
             }
 
-            // Step 2: Save child with optional fields
+            // Step 2: Save new child
             let child = Child(
                 id: UUID().uuidString,
                 name: childName,
                 color: selectedGender == "Boy" ? "Blue" : "Pink",
-                imageData: nil,    // Optional image - can be edited later
-                imageName: nil     // Optional avatar
+                imageData: nil,
+                imageName: nil
             )
 
             saveChildToFirestore(guardianID: guardianID, child: child) { result in
-                switch result {
-                case .success:
-                    fetchChildrenCallback?()
-                    showSuccessAlert = true  // ✅ Trigger success alert
-                case .failure(let error):
-                    print("Error saving child: \(error.localizedDescription)")
+                DispatchQueue.main.async {
+                    switch result {
+                    case .success:
+                        fetchChildrenCallback?()
+                        alertType = .success
+                    case .failure(let error):
+                        print("Error saving child: \(error.localizedDescription)")
+                    }
+                    isLoading = false
                 }
-                isLoading = false
             }
         }
     }
+
+    // MARK: - Save Helper
+    func saveChildToFirestore(guardianID: String, child: Child, completion: @escaping (Result<Void, Error>) -> Void) {
+        let db = Firestore.firestore()
+        let data: [String: Any] = [
+            "name": child.name,
+            "color": child.color,
+            "createdAt": Timestamp(date: Date())
+        ]
+
+        db.collection("guardians").document(guardianID)
+            .collection("children")
+            .document(child.id)
+            .setData(data) { error in
+                if let error = error {
+                    completion(.failure(error))
+                } else {
+                    completion(.success(()))
+                }
+            }
+    }
 }
 
-// Bubble Background Component
+// MARK: - Bubble Background
 struct BubbleBackground: View {
     let color: Color
-
     var body: some View {
         GeometryReader { geometry in
             ZStack {

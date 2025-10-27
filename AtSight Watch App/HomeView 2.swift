@@ -145,9 +145,18 @@ struct HomeView_Watch: View {
             .onAppear {
                 startServicesIfPossible(context: "onAppear")
             }
+//            .onDisappear {
+//                stopServices(context: "onDisappear")
+//            }
             .onDisappear {
-                stopServices(context: "onDisappear")
+                // ✅ لا توقف التتبع إذا المستخدم راح إلى صفحة المحادثة
+                if !navigateToChat {
+                    stopServices(context: "onDisappear")
+                } else {
+                    print("🟢 [Home] keeping live services active (VoiceChatView opened)")
+                }
             }
+
             .onChange(of: pairing.linked) { new in
                 if new {
                     startServicesIfPossible(context: "onChange(linked=true)")

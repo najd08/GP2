@@ -3,11 +3,12 @@
 //  AtSight
 //
 //  Updated by Leon on 27/10/2025
-//  Fixed: recordedURL optional + fully matched to WalkieTalkiePhoneView
+//  ✅ Added local notifications with childName when new voice message arrives
 //
 
 import SwiftUI
 import AVFoundation
+import UserNotifications
 
 struct VoiceChatPhone: View {
     // ✅ IDs come dynamically from previous page
@@ -19,7 +20,7 @@ struct VoiceChatPhone: View {
     @State private var recorder: AVAudioRecorder?
     @State private var player: AVPlayer?
     @State private var isRecording = false
-    @State private var recordedURL: URL? = nil   // ✅ Optional fixed
+    @State private var recordedURL: URL? = nil
     @State private var recordedDuration: Double = 0
     @State private var isPreviewing = false
     @State private var isUploading = false
@@ -140,7 +141,7 @@ struct VoiceChatPhone: View {
                             Image(systemName: isRecording ? "stop.circle.fill" : "mic.circle.fill")
                                 .resizable()
                                 .frame(width: 90, height: 90)
-                                .foregroundColor(isRecording ? .red : Color(red: 0.71, green: 0.85, blue: 0.64)) // B4D8A4
+                                .foregroundColor(isRecording ? .red : Color(red: 0.71, green: 0.85, blue: 0.64))
                                 .shadow(radius: 4)
                         }
                     }
@@ -156,6 +157,7 @@ struct VoiceChatPhone: View {
             }
         }
         .onAppear {
+            requestNotificationPermission()
             fetchMessages()
             startAutoRefresh()
         }
@@ -164,6 +166,30 @@ struct VoiceChatPhone: View {
             player?.pause()
             stopAutoRefresh()
         }
+    }
+
+    // MARK: - Notifications
+    private func requestNotificationPermission() {
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
+            if granted {
+                print("✅ Notification permission granted")
+            } else {
+                print("⚠️ Notification permission denied:", error?.localizedDescription ?? "")
+            }
+        }
+    }
+
+    private func showNotification(from sender: String, childName: String) {
+        let content = UNMutableNotificationContent()
+        content.title = "New voice message from \(childName)"
+        content.body = sender == "watch"
+            ? "🎙️ \(childName) sent you a new voice message."
+            : "📩 New message received."
+        content.sound = .default
+
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
+        let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: trigger)
+        UNUserNotificationCenter.current().add(request)
     }
 
     // MARK: - Auto Refresh
@@ -188,6 +214,8 @@ struct VoiceChatPhone: View {
         ]
         guard let url = comps.url else { return }
 
+        let oldMessages = self.messages
+
         URLSession.shared.dataTask(with: url) { data, _, err in
             guard let data, err == nil else { return }
             if let arr = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
@@ -202,6 +230,14 @@ struct VoiceChatPhone: View {
                             timestamp: Date(timeIntervalSince1970: d["ts"] as? Double ?? 0)
                         )
                     }.sorted(by: { $0.timestamp < $1.timestamp })
+
+                    // ✅ Detect new incoming message from watch
+                    if let latest = self.messages.last,
+                       latest.sender == "watch",
+                       oldMessages.last?.audioURL != latest.audioURL {
+                        showNotification(from: latest.sender, childName: childName)
+                        print("🔔 Local notification shown for new message from \(childName)")
+                    }
                 }
             }
         }.resume()
