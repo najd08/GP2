@@ -1,9 +1,10 @@
-//MARK: changed this file's name from "NotificationSettings" into "NotificationsHistory". ‼️
-//changed the page's title to better explain the page's purpose. ‼️
-//changed the colors for the child leaving safe zones to be yellow. ✅
-//changed the add child message to have nil value as the isSafeZone value, this makes the notification have the default gray colors. ✅
-//added "NotificationBody" color asset to notification body color to fit light mode. ✅
-//Add delete notification button? ❓
+//
+//  NotificationsHistory.swift
+//  AtSight iOS App
+//
+//  Created by Leena on 22/10/2025.
+//  Updated: Added support for "watch_removed" event.
+//
 
 import SwiftUI
 import Firebase
@@ -16,15 +17,18 @@ struct NotificationItem: Identifiable {
     var title: String
     var body: String
     var timestamp: Timestamp
-    var isSafeZone: Bool? //value is optional
+    var isSafeZone: Bool? // value is optional
+    var event: String? // ✅ added to handle "watch_removed" type
 }
 
 //MARK: - extensions:
-// This extension makes the view code simple and clean, which fixes the compiler error:
 extension NotificationItem {
     
-    // Determines the color based on the isSafeZone state.
+    // Determines the color based on the isSafeZone state or event type.
     var indicatorColor: Color {
+        if event == "watch_removed" {
+            return Color("ColorRed") // ✅ red for lost heart rate
+        }
         guard let isSafe = isSafeZone else {
             // This is the color for neutral notifications (isSafeZone is nil).
             return Color("ColorGray")
@@ -40,6 +44,9 @@ extension NotificationItem {
     
     // Determines which icon to show.
     var iconName: String {
+        if event == "watch_removed" {
+            return "heart.slash" // ✅ distinct icon for watch removed
+        }
         guard isSafeZone != nil else {
             // A neutral icon for adding a child or other non-zone alerts.
             return "person.badge.plus"
@@ -103,7 +110,7 @@ struct NotificationsHistory: View {
                                 RoundedRectangle(cornerRadius: 20)
                                     .stroke(notification.indicatorColor, lineWidth: 1.5)
                             )
-                            .shadow(color: Color.black.opacity(0.1), radius: 6, x: 0, y: 4) // ✅ شادو خفيف
+                            .shadow(color: Color.black.opacity(0.1), radius: 6, x: 0, y: 4)
                             .padding(.horizontal, 16)
                         }
                     }
@@ -113,14 +120,13 @@ struct NotificationsHistory: View {
             }
             .background(Color("BgColor").ignoresSafeArea())
             .navigationTitle("Notifications History")
-            .navigationBarTitleDisplayMode(.large) // ✅ رجعناها Large مثل الكود القديم
+            .navigationBarTitleDisplayMode(.large)
             .foregroundColor(Color("BlackFont"))
         }
         .onAppear(perform: fetchNotifications)
     }
 
     //MARK: - Functions:
-    //fetch guardians' notification from Firebase:
     func fetchNotifications() {
         guard let guardianID = Auth.auth().currentUser?.uid else {
             print("User not logged in")
@@ -144,8 +150,8 @@ struct NotificationsHistory: View {
                             title: data["title"] as? String ?? "Untitled",
                             body: data["body"] as? String ?? "",
                             timestamp: data["timestamp"] as? Timestamp ?? Timestamp(date: Date()),
-                            // This line handles nil values from Firestore:
-                            isSafeZone: data["isSafeZone"] as? Bool
+                            isSafeZone: data["isSafeZone"] as? Bool,
+                            event: data["event"] as? String // ✅ safely map new field
                         )
                     } ?? []
                     self.isLoading = false

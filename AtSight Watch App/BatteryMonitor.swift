@@ -9,6 +9,7 @@
 import WatchKit
 import Foundation
 
+
 final class BatteryMonitor: NSObject {
     static let shared = BatteryMonitor()
     
@@ -17,7 +18,7 @@ final class BatteryMonitor: NSObject {
     
     private var currentChildName: String?
     private var thresholdPercentage: Int = 20
-    private let pollInterval: TimeInterval = 600   // 10 minutes
+    private let pollInterval: TimeInterval = 60
 
     private override init() {
         super.init()

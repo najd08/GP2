@@ -276,8 +276,31 @@ struct AddChildNameView: View {
                 DispatchQueue.main.async {
                     switch result {
                     case .success:
+                        // ✅ Update local child list
                         fetchChildrenCallback?()
+
+                        // ✅ Create a notification in Firestore
+                        let notificationData: [String: Any] = [
+                            "title": "New Child Added",
+                            "body": "\(child.name) has been successfully added.",
+                            "timestamp": Timestamp(date: Date()),
+                            "event": "child_added"
+                        ]
+
+                        db.collection("guardians")
+                            .document(guardianID)
+                            .collection("notifications")
+                            .addDocument(data: notificationData) { error in
+                                if let error = error {
+                                    print("Error adding notification: \(error.localizedDescription)")
+                                } else {
+                                    print("Notification added successfully.")
+                                }
+                            }
+
+                        // ✅ Show success alert
                         alertType = .success
+
                     case .failure(let error):
                         print("Error saving child: \(error.localizedDescription)")
                     }
@@ -286,6 +309,7 @@ struct AddChildNameView: View {
             }
         }
     }
+
 
     // MARK: - Save Helper
     func saveChildToFirestore(guardianID: String, child: Child, completion: @escaping (Result<Void, Error>) -> Void) {

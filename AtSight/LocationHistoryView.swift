@@ -7,7 +7,6 @@ import FirebaseAuth
 struct LocationHistoryView: View {
     var childID: String
     @State private var locations: [Location] = []
-    @State private var selectedLocation: Location?
     @Environment(\.presentationMode) var presentationMode
     @State private var isLoading = true
 
@@ -127,18 +126,19 @@ struct LocationHistoryView: View {
                     let lat = coord[0]
                     let lng = coord[1]
 
-                    // ✅ Title fallback: streetName → zoneName → placeName → "Unknown"
+                    // Location naming
                     let street   = (data["streetName"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
                     let zone     = (data["zoneName"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
                     let place    = (data["placeName"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
                     let title    = [street, zone, place].compactMap { $0 }.first(where: { !$0.isEmpty }) ?? "Unknown"
 
-                    // Optional extras (most docs ما فيها address/distance)
+                    // Determine color
+                    let colorName = (data["color"] as? String) ?? (data["isSafeZone"] as? Bool == false ? "red" : "green")
+
                     let address  = (data["address"] as? String) ?? (street ?? "—")
                     let distance = (data["distance"] as? String) ?? "—"
-                    let isSafe   = (data["isSafeZone"] as? Bool) ?? true
-
                     let ts = (data["timestamp"] as? Timestamp)?.dateValue() ?? Date()
+
                     let df = DateFormatter()
                     df.dateFormat = "yyyy/MM/dd"
                     let dateStr = df.string(from: ts)
@@ -153,7 +153,7 @@ struct LocationHistoryView: View {
                         distance: distance,
                         latitude: lat,
                         longitude: lng,
-                        isSafeZone: isSafe
+                        color: colorName
                     )
                 }
             }
@@ -170,7 +170,7 @@ struct Location: Identifiable, Hashable {
     let distance: String
     let latitude: Double
     let longitude: Double
-    let isSafeZone: Bool
+    let color: String // 🔹 new: color name ("red", "orange", "green")
 }
 
 // MARK: - Map View
@@ -242,7 +242,7 @@ struct MapView: View {
                     MapAnnotation(coordinate: item.coordinate) {
                         ZStack {
                             Circle()
-                                .fill(Color.green.opacity(0.4))
+                                .fill(Color.blue.opacity(0.3))
                                 .frame(width: 42, height: 42)
 
                             Image(systemName: "mappin")
@@ -277,7 +277,6 @@ struct MapView: View {
                     }
                 }
                 .padding()
-                .clipShape(RoundedRectangle(cornerRadius: 15))
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                 .padding(.trailing, 20)
                 .padding(.top, 20)
@@ -296,20 +295,22 @@ struct LocationMarker: Identifiable {
     var coordinate: CLLocationCoordinate2D
 }
 
-// MARK: - Location Row
+// MARK: - Location Row (colored)
 struct LocationRow: View {
     let location: Location
 
     var body: some View {
-        HStack(alignment: .center) {
-            Image(systemName: location.isSafeZone ? "checkmark.shield" : "exclamationmark.triangle")
-                .foregroundColor(location.isSafeZone ? .green : .red)
+        let color = colorFor(location.color) // ✅ انقل التعريف هنا فوق
+
+        HStack(alignment: .center, spacing: 12) {
+            Image(systemName: iconFor(location.color))
+                .foregroundColor(color)
                 .font(.title2)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(location.name)
                     .font(.headline)
-                    .foregroundColor(location.isSafeZone ? .green : .red)
+                    .foregroundColor(color)
 
                 Text("\(location.date) \(location.time)")
                     .font(.subheadline)
@@ -321,7 +322,25 @@ struct LocationRow: View {
         .frame(maxWidth: .infinity)
         .background(Color("navBG"))
         .cornerRadius(12)
-        .shadow(color: Color.black.opacity(0.3), radius: 1, x: 0, y: 1)
+        .shadow(color: color.opacity(0.4), radius: 2, x: 0, y: 1)
+    }
+
+    private func colorFor(_ name: String) -> Color {
+        switch name.lowercased() {
+        case "red": return .red
+        case "orange": return .orange
+        case "green": return .green
+        default: return .gray
+        }
+    }
+
+    private func iconFor(_ name: String) -> String {
+        switch name.lowercased() {
+        case "red": return "exclamationmark.triangle.fill"
+        case "orange": return "exclamationmark.triangle"
+        case "green": return "checkmark.shield.fill"
+        default: return "questionmark.circle"
+        }
     }
 }
 

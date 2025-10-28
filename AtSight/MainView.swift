@@ -1,4 +1,10 @@
-//Edit by Riyam: modified line 24 for page navigation.
+//
+//  MainView.swift
+//  AtSight
+//
+//  Edit by Riyam: modified line 24 for page navigation.
+//  Updated by Leon on 28/10/2025: Added AlertPage overlay for continuous zone monitoring.
+//
 
 import SwiftUI
 import FirebaseFirestore
@@ -16,8 +22,9 @@ struct MainView: View {
     var body: some View {
         ZStack {
             Color("navBG").ignoresSafeArea()
+
             VStack(spacing: 0) {
-                // Content Area
+                // MARK: - Content Area
                 ZStack {
                     switch selectedTab {
                     case 0:
@@ -32,10 +39,10 @@ struct MainView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                 if selectedTab == 0 || selectedTab == 1 || selectedTab == 2 {
+                // MARK: - Custom Tab Bar
+                if selectedTab == 0 || selectedTab == 1 || selectedTab == 2 {
                     Spacer()
 
-                    // Custom Tab Bar
                     HStack {
                         Button(action: { selectedTab = 0 }) {
                             VStack {
@@ -66,7 +73,7 @@ struct MainView: View {
                 }
             }
 
-            // Enlarged Home Tab on Top (✅ يظهر فقط بالصفحات المحددة)
+            // MARK: - Floating Home Button
             if selectedTab == 0 || selectedTab == 1 || selectedTab == 2 {
                 Button(action: { selectedTab = 1 }) {
                     ZStack {
@@ -87,9 +94,17 @@ struct MainView: View {
         .onAppear {
             fetchChildren()
         }
-        .preferredColorScheme(isDarkMode ? .dark : .light) // ✅ إضافة تحكم الدارك مود هنا
+        .preferredColorScheme(isDarkMode ? .dark : .light)
+
+        // ✅ Overlay running silently in the background
+        .overlay(
+            AlertPage()
+                .frame(width: 0, height: 0) // hidden but active
+                .opacity(0)
+        )
     }
 
+    // MARK: - Fetch Children Data
     func fetchChildren() {
         guard let userId = Auth.auth().currentUser?.uid else { return }
         let db = Firestore.firestore()

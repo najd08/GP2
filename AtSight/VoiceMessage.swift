@@ -2,16 +2,17 @@
 //  VoiceChatPhone.swift
 //  AtSight
 //
-//  Updated by Leon on 27/10/2025
-//  ✅ Added local notifications with childName when new voice message arrives
+//  Updated by Leon on 29/10/2025
+//  ✅ Shows and saves notification only once (shared between Main & Chat)
+//  ✅ Syncs Firestore notifications with local ones
 //
 
 import SwiftUI
 import AVFoundation
 import UserNotifications
+import FirebaseFirestore
 
 struct VoiceChatPhone: View {
-    // ✅ IDs come dynamically from previous page
     let guardianId: String
     let childId: String
     let childName: String
@@ -26,6 +27,9 @@ struct VoiceChatPhone: View {
     @State private var isUploading = false
     @State private var timer: Timer?
 
+    // ✅ Shared flag across all views (prevents duplicates globally)
+    @AppStorage("lastVoiceNotifiedURL") private var sharedLastNotifiedURL: String = ""
+
     private let uploadURL = URL(string: "https://uploadvoicemessageapi-7gq4boqq6a-uc.a.run.app")!
     private let fetchURL = URL(string: "https://getvoicemessagesapi-7gq4boqq6a-uc.a.run.app")!
 
@@ -34,7 +38,7 @@ struct VoiceChatPhone: View {
             Color.white.ignoresSafeArea()
 
             VStack(spacing: 0) {
-                // MARK: Header Bar
+                // MARK: Header
                 HStack {
                     Image(systemName: "person.circle.fill")
                         .resizable()
@@ -66,7 +70,9 @@ struct VoiceChatPhone: View {
                                         Button(action: { playAudio(from: msg.audioURL) }) {
                                             HStack(spacing: 8) {
                                                 Image(systemName: "play.circle.fill")
-                                                Text("\(Int(msg.duration))s")
+                                                if msg.duration > 1 {
+                                                    Text("\(Int(msg.duration))s")
+                                                }
                                             }
                                             .padding(.vertical, 8)
                                             .padding(.horizontal, 12)
@@ -87,7 +93,9 @@ struct VoiceChatPhone: View {
                             }
                         }
                     }
-                    .onAppear { fetchMessages() }
+                    .onAppear {
+                        startAutoRefresh()
+                    }
                     .onChange(of: messages.count) { _ in
                         if let last = messages.last {
                             withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
@@ -153,13 +161,10 @@ struct VoiceChatPhone: View {
                 }
                 .padding(.bottom, 16)
                 .background(Color.white)
-
             }
         }
         .onAppear {
             requestNotificationPermission()
-            fetchMessages()
-            startAutoRefresh()
         }
         .onDisappear {
             recorder?.stop()
@@ -179,21 +184,54 @@ struct VoiceChatPhone: View {
         }
     }
 
-    private func showNotification(from sender: String, childName: String) {
+    /// ✅ Shows and saves notification once per message globally
+    private func showAndSaveNotificationOnce(for audioURL: String, childName: String) {
+        guard sharedLastNotifiedURL != audioURL else {
+            print("🚫 Skipping duplicate notification for \(childName)")
+            return
+        }
+
+        sharedLastNotifiedURL = audioURL
+
+        // 🔔 Show local notification
         let content = UNMutableNotificationContent()
         content.title = "New voice message from \(childName)"
-        content.body = sender == "watch"
-            ? "🎙️ \(childName) sent you a new voice message."
-            : "📩 New message received."
+        content.body = "🎙️ \(childName) sent you a new voice message."
         content.sound = .default
 
         let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
         let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: trigger)
         UNUserNotificationCenter.current().add(request)
+
+        print("🔔 Notification displayed once for \(childName)")
+
+        // 🧾 Save notification to Firestore
+        let db = Firestore.firestore()
+        let notifRef = db
+            .collection("guardians")
+            .document(guardianId)
+            .collection("notifications")
+            .document()
+
+        let data: [String: Any] = [
+            "title": "New Voice Message",
+            "body": "\(childName) sent a new voice message 🎙️",
+            "audioURL": audioURL,
+            "timestamp": Timestamp(date: Date())
+        ]
+
+        notifRef.setData(data) { error in
+            if let error = error {
+                print("❌ Failed to save notification:", error.localizedDescription)
+            } else {
+                print("✅ Notification saved in Firestore for \(childName)")
+            }
+        }
     }
 
     // MARK: - Auto Refresh
     private func startAutoRefresh() {
+        fetchMessages()
         timer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { _ in
             fetchMessages()
         }
@@ -231,12 +269,11 @@ struct VoiceChatPhone: View {
                         )
                     }.sorted(by: { $0.timestamp < $1.timestamp })
 
-                    // ✅ Detect new incoming message from watch
+                    // ✅ If new message arrived → show + save once globally
                     if let latest = self.messages.last,
                        latest.sender == "watch",
                        oldMessages.last?.audioURL != latest.audioURL {
-                        showNotification(from: latest.sender, childName: childName)
-                        print("🔔 Local notification shown for new message from \(childName)")
+                        showAndSaveNotificationOnce(for: latest.audioURL, childName: childName)
                     }
                 }
             }

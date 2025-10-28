@@ -1,10 +1,15 @@
 //
 //  HomeView_Watch.swift
 //  AtSight (WatchKit Extension)
+//  Updated by Leon – 28/10/2025
+//  ✅ Added background voice listener (fetch every 2s + haptic alert)
+//  ✅ Prevents repeated playback across Home + Chat using shared UserDefaults
 //
 
 import SwiftUI
 import WatchConnectivity
+import AVFoundation
+import WatchKit
 
 struct HomeView_Watch: View {
     @StateObject private var pairing = PairingState.shared
@@ -28,33 +33,34 @@ struct HomeView_Watch: View {
             return
         }
 
-        // Ensure WCSession is active
         if WCSession.isSupported(), WCSession.default.activationState == .notActivated {
             WatchConnectivityManager.shared.activate()
         }
 
-        // Start services
         let childName = pairing.childName.isEmpty
             ? (UserDefaults.standard.string(forKey: "childDisplayName") ?? "Child")
             : pairing.childName
 
         BatteryMonitor.shared.startMonitoring(for: childName)
         WatchLocationManager.shared.startLiveUpdates()
-        HeartRateMonitor.shared.startMonitoring(for: childName) // ✅ Added heart rate service
+        HeartRateMonitor.shared.startMonitoring(for: childName)
+
+        // ✅ Start background voice listener
+        VoiceChatBackground.shared.startListening()
 
         print("✅ [Home] services started (\(context)) for childId=\(childId) name=\(childName)")
     }
 
     private func stopServices(context: String) {
         WatchLocationManager.shared.stopLiveUpdates()
-        HeartRateMonitor.shared.stopMonitoring() // ✅ Stop heart rate when leaving
+        HeartRateMonitor.shared.stopMonitoring()
+        VoiceChatBackground.shared.stopListening()
         print("🛑 [Home] services stopped (\(context))")
     }
 
     var body: some View {
         NavigationStack {
             ZStack {
-                // Background gradient
                 LinearGradient(gradient: Gradient(colors: [bgTop, bgBottom]),
                                startPoint: .topLeading,
                                endPoint: .bottomTrailing)
@@ -71,7 +77,6 @@ struct HomeView_Watch: View {
 
                         Spacer(minLength: 8)
 
-                        // Logo
                         Image("Image")
                             .resizable()
                             .scaledToFit()
@@ -84,7 +89,6 @@ struct HomeView_Watch: View {
                     .padding(.horizontal, 16)
                     .padding(.top, 6)
 
-                    // MARK: Contact Card → VoiceChat
                     ContactRow_Watch(
                         name: pairing.parentName.isEmpty ? "Parent" : pairing.parentName
                     ) {
@@ -93,7 +97,6 @@ struct HomeView_Watch: View {
 
                     Spacer(minLength: 2)
 
-                    // MARK: SOS Button
                     Button(action: { startSOSPopup() }) {
                         HStack(spacing: 8) {
                             Image(systemName: "exclamationmark.triangle.fill")
@@ -124,41 +127,29 @@ struct HomeView_Watch: View {
                     .padding(.bottom, 2)
                 }
 
-                // MARK: SOS Popup
                 if showSOSPopup {
-                    SOSConfirmSheet(
-                        isShowing: $showSOSPopup,
-                        onSend: {
-                            showSOSPopup = false
-                            print("SOS Sent")
-                        }
-                    )
+                    SOSConfirmSheet(isShowing: $showSOSPopup) {
+                        showSOSPopup = false
+                        print("🚨 SOS Sent")
+                    }
                 }
 
-                // MARK: Navigation → VoiceChat
                 NavigationLink(destination: VoiceChatView(), isActive: $navigateToChat) {
                     EmptyView()
                 }
                 .hidden()
             }
             .navigationBarBackButtonHidden(true)
-            .onAppear {
-                startServicesIfPossible(context: "onAppear")
-            }
-//            .onDisappear {
-//                stopServices(context: "onDisappear")
-//            }
+            .onAppear { startServicesIfPossible(context: "onAppear") }
             .onDisappear {
-                // ✅ لا توقف التتبع إذا المستخدم راح إلى صفحة المحادثة
                 if !navigateToChat {
                     stopServices(context: "onDisappear")
                 } else {
                     print("🟢 [Home] keeping live services active (VoiceChatView opened)")
                 }
             }
-
-            .onChange(of: pairing.linked) { new in
-                if new {
+            .onChange(of: pairing.linked) { newValue in
+                if newValue {
                     startServicesIfPossible(context: "onChange(linked=true)")
                 } else {
                     stopServices(context: "onChange(linked=false)")
@@ -167,7 +158,6 @@ struct HomeView_Watch: View {
         }
     }
 
-    // MARK: - SOS Logic
     private func startSOSPopup() { showSOSPopup = true }
     private func cancelSOS() { showSOSPopup = false }
 }
@@ -176,15 +166,13 @@ struct HomeView_Watch: View {
 struct ContactRow_Watch: View {
     var name: String
     var onChatTapped: () -> Void
-
     private let buttons = Color("Buttons")
     private let textMain = Color.black
-    private let stroke   = Color.black.opacity(0.10)
+    private let stroke = Color.black.opacity(0.10)
 
     var body: some View {
         Button(action: onChatTapped) {
             HStack(spacing: 10) {
-                // Mic icon
                 ZStack {
                     Circle()
                         .fill(buttons.opacity(0.20))
@@ -204,14 +192,12 @@ struct ContactRow_Watch: View {
                     .minimumScaleFactor(0.85)
 
                 Spacer(minLength: 8)
-
                 Image(systemName: "chevron.right")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundColor(Color.black.opacity(0.55))
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
-            .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: 16)
                     .fill(Color.white)
@@ -241,18 +227,15 @@ struct SOSConfirmSheet: View {
     var body: some View {
         ZStack {
             Color.black.opacity(0.35).ignoresSafeArea()
-
             VStack(spacing: 14) {
                 Text("Trigger SOS !")
                     .font(.system(size: 16, weight: .bold))
                     .foregroundColor(titleRed1)
-
                 Text("Are you sure you want to trigger SOS?")
                     .font(.system(size: 12))
                     .foregroundColor(bodyText)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 6)
-
                 HStack(spacing: 12) {
                     Button(action: { isShowing = false }) {
                         Text("Cancel")
@@ -263,7 +246,6 @@ struct SOSConfirmSheet: View {
                             .background(Capsule().fill(Color.gray))
                     }
                     .buttonStyle(.plain)
-
                     Button(action: { onSend() }) {
                         Text("Send")
                             .font(.system(size: 12, weight: .semibold))
@@ -293,7 +275,78 @@ struct SOSConfirmSheet: View {
     }
 }
 
-// MARK: - Preview
+// MARK: - Background Voice Fetcher
+final class VoiceChatBackground {
+    static let shared = VoiceChatBackground()
+    private var timer: Timer?
+    private var player: AVPlayer?
+
+    private var lastURL: String? {
+        get { UserDefaults.standard.string(forKey: "lastPlayedVoiceURL") }
+        set { UserDefaults.standard.set(newValue, forKey: "lastPlayedVoiceURL") }
+    }
+
+    private var wasPlayed: Bool {
+        get { UserDefaults.standard.bool(forKey: "lastPlayedVoicePlayed") }
+        set { UserDefaults.standard.set(newValue, forKey: "lastPlayedVoicePlayed") }
+    }
+
+    func startListening() {
+        stopListening()
+        timer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { _ in
+            self.fetchLatestMessage()
+        }
+        print("🎧 Background voice listener started (2s interval)")
+    }
+
+    func stopListening() {
+        timer?.invalidate()
+        timer = nil
+        print("🛑 Background voice listener stopped")
+    }
+
+    private func fetchLatestMessage() {
+        let guardianId = UserDefaults.standard.string(forKey: "guardianId") ?? ""
+        let childId = UserDefaults.standard.string(forKey: "currentChildId") ?? ""
+        guard !guardianId.isEmpty, !childId.isEmpty else { return }
+
+        guard let url = URL(string:
+            "https://getvoicemessagesapi-7gq4boqq6a-uc.a.run.app?guardianId=\(guardianId)&childId=\(childId)&limit=1"
+        ) else { return }
+
+        URLSession.shared.dataTask(with: url) { data, _, _ in
+            guard let data,
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]],
+                  let latest = json.first,
+                  let audioURL = latest["audioURL"] as? String,
+                  let sender = latest["sender"] as? String,
+                  sender == "phone" else { return }
+
+            if self.lastURL == audioURL, self.wasPlayed { return }
+
+            if self.lastURL != audioURL {
+                self.lastURL = audioURL
+                self.wasPlayed = false
+            }
+
+            if self.wasPlayed == false {
+                self.wasPlayed = true
+                print("🔊 New voice message detected → playing…")
+                WKInterfaceDevice.current().play(.notification)
+                DispatchQueue.main.async {
+                    self.playAudio(from: audioURL)
+                }
+            }
+        }.resume()
+    }
+
+    private func playAudio(from urlString: String) {
+        guard let url = URL(string: urlString) else { return }
+        player = AVPlayer(url: url)
+        player?.play()
+    }
+}
+
 #Preview {
     HomeView_Watch()
 }
