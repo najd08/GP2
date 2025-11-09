@@ -1,15 +1,13 @@
-//
-//  EditChildProfile.swift
-//  AtSight
-//
-//  Merged: keeps “after” UI/UX polish + “before” delete flow
-//
+// NOTE BY RIYAM: re-added the missing buttons for authorized people and customize notifcations ✅
+// commented the other navigation links since they are redunant and cause error...
+// need to add a notification history item message to fire base for delete child function ✅
+// delete function leave orphaned data in fire base! need to update this funtion!! ⚠️
 
 import SwiftUI
 import Firebase
 import FirebaseFirestore
 import FirebaseStorage
-import FirebaseAuth
+import FirebaseAuth // MARK: New import for user authentication
 
 
 struct EditChildProfile: View {
@@ -26,6 +24,7 @@ struct EditChildProfile: View {
     @State private var goToLocationHistory = false
     @State private var isAvatarSelectionVisible = false
     
+    // MARK: New state variables for delete functionality
     // Delete states
     @State private var showDeleteConfirm = false
     @State private var isDeleting = false
@@ -42,7 +41,7 @@ struct EditChildProfile: View {
                 colorPickerSection
                 navigationLinksSection
                 saveButton
-                deleteButton
+                deleteButton // MARK: New delete button added to the UI
             }
             .padding()
             .foregroundColor(Color("BlackFont"))
@@ -76,6 +75,7 @@ struct EditChildProfile: View {
                 dismissButton: .default(Text("OK"))
             )
         }
+        // MARK: New alerts and overlay for the delete process
         // Confirm delete
         .alert("Delete this child?", isPresented: $showDeleteConfirm) {
             Button("Cancel", role: .cancel) { }
@@ -166,7 +166,7 @@ struct EditChildProfile: View {
                 .foregroundColor(.gray)
             TextField("Enter name", text: $child.name)
                 .textFieldStyle(RoundedBorderTextFieldStyle())
-                .disabled(isSaving || isDeleting)
+                .disabled(isSaving || isDeleting) // MARK: Disabled while deleting
         }
     }
     
@@ -186,7 +186,7 @@ struct EditChildProfile: View {
             }
             .contentShape(Rectangle())
             .onTapGesture {
-                if !isSaving && !isDeleting {
+                if !isSaving && !isDeleting { // MARK: Disabled while deleting
                     withAnimation { showingColorPicker.toggle() }
                 }
             }
@@ -212,30 +212,62 @@ struct EditChildProfile: View {
         }
     }
     
+    // MARK: This navigation section is from the old code.
     // MARK: - Navigation Links
     var navigationLinksSection: some View {
-        VStack(spacing: 12) {
-            NavigationLink(destination: LocationHistoryView(childID: child.id)) {
-                Text("View Location History")
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(Color.blue.opacity(0.1))
-                    .cornerRadius(8)
-            }
-            
-            NavigationLink(
-                destination: SavedZonesView(viewModel: ZonesViewModel(childID: child.id))
-            ) {
-                Text("Manage Zones")
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(Color.green.opacity(0.1))
-                    .cornerRadius(8)
-            }
-
+        VStack(spacing: 10) {
+            navigationBox(title: "Authorized People", systemImage: "person.2.fill", destination: AuthorizedPeople(child: $child))
+            navigationBox(title: "Customize Notifications", systemImage: "bell.badge", destination: CustomizeNotifications(child: $child))
         }
+        .padding(.top)
+        .opacity(isSaving ? 0.6 : 1.0)
     }
     
+    //MARK: - commented buttons that were causing issues:
+//    var navigationLinksSection: some View {
+//        VStack(spacing: 12) {
+//            NavigationLink(destination: LocationHistoryView(childID: child.id)) {
+//                Text("View Location History")
+//                    .frame(maxWidth: .infinity)
+//                    .padding()
+//                    .background(Color.blue.opacity(0.1))
+//                    .cornerRadius(8)
+//            }
+//            
+//            NavigationLink(
+//                destination: SavedZonesView(viewModel: ZonesViewModel(childID: child.id))
+//            ) {
+//                Text("Manage Zones")
+//                    .frame(maxWidth: .infinity)
+//                    .padding()
+//                    .background(Color.green.opacity(0.1))
+//                    .cornerRadius(8)
+//            }
+//            
+//            NavigationLink(
+//                destination: AuthorizedPeople()
+//            ) {
+//                Text("Authorized People")
+//                    .frame(maxWidth: .infinity)
+//                    .padding()
+//                    .background(Color.blue.opacity(0.1))
+//                    .cornerRadius(8)
+//            }
+//            
+//            NavigationLink(
+//                destination: CustomizeNotifications(child: $child)
+//            ) {
+//                Text("Customize Notifications")
+//                    .frame(maxWidth: .infinity)
+//                    .padding()
+//                    .background(Color.green.opacity(0.1))
+//                    .cornerRadius(8)
+//            }
+//
+//        }
+//    }
+    
+    // MARK: Save button style and action updated in new code.
     // MARK: - Save Button
     var saveButton: some View {
         Button(action: saveChild) {
@@ -250,6 +282,7 @@ struct EditChildProfile: View {
         .disabled(isSaving || isDeleting)
     }
     
+    // MARK: New delete button view
     // MARK: - Delete Button
     var deleteButton: some View {
         Button(role: .destructive) {
@@ -266,11 +299,12 @@ struct EditChildProfile: View {
         .disabled(isSaving || isDeleting)
     }
     
+    // MARK: Back button logic updated in new code
     // MARK: - Back Button
     var backButton: some View {
         Button(action: { dismiss() }) {
             Image(systemName: "chevron.left")
-                .foregroundColor(.blue)
+                .foregroundColor(Color("BlackFont"))
         }
     }
     
@@ -308,23 +342,55 @@ struct EditChildProfile: View {
     // MARK: - Delete Child
     func deleteChild() {
         guard let guardianID = Auth.auth().currentUser?.uid else { return }
+        
+        // Capture name and ID before they are dismissed
+        let childIDToDelete = child.id
+        let childName = child.name
+        
         isDeleting = true
-        Firestore.firestore()
-            .collection("guardians")
+        
+        let db = Firestore.firestore()
+        let childRef = db.collection("guardians")
             .document(guardianID)
             .collection("children")
-            .document(child.id)
-            .delete { error in
+            .document(childIDToDelete)
+        
+        // Step 1: Delete the child document
+        childRef.delete { error in
+            if let error = error {
+                // Handle delete error
                 isDeleting = false
-                if let error = error {
-                    deleteError = error.localizedDescription
-                } else {
-                    dismiss()
-                }
+                deleteError = error.localizedDescription
+            } else {
+                // Step 2: On success, create the notification
+                let notificationData: [String: Any] = [
+                    "title": "Child Removed",
+                    "body": "\(childName) has been successfully deleted.",
+                    "timestamp": Timestamp(date: Date()),
+                    "event": "child_deleted"
+                ]
+                
+                db.collection("guardians")
+                    .document(guardianID)
+                    .collection("notifications")
+                    .addDocument(data: notificationData) { error in
+                        if let error = error {
+                            print("Error adding delete notification: \(error.localizedDescription)")
+                        } else {
+                            print("Delete notification added successfully.")
+                        }
+                    }
+                
+                // Step 3: Update UI
+                isDeleting = false
+                dismiss()
             }
+        }
     }
+
 }
 
+// MARK: These color functions are the simplified versions from the new code
 // MARK: - Color Conversion
 func colorFromString(_ string: String) -> Color {
     switch string {
@@ -352,4 +418,137 @@ func colorToString(_ color: Color) -> String {
     if color == .brown { return "brown" }
     if color == .gray { return "gray" }
     return "gray"
+}
+
+// MARK: This ImagePicker struct was in the old code but removed from the new one.
+struct ImagePicker: UIViewControllerRepresentable {
+    @Binding var selectedImage: UIImage?
+
+    class Coordinator: NSObject, UINavigationControllerDelegate, UIImagePickerControllerDelegate {
+        let parent: ImagePicker
+
+        init(_ parent: ImagePicker) {
+            self.parent = parent
+        }
+
+        func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
+            if let uiImage = info[.originalImage] as? UIImage {
+                parent.selectedImage = uiImage
+            }
+            picker.dismiss(animated: true)
+        }
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+
+    func makeUIViewController(context: Context) -> UIImagePickerController {
+        let picker = UIImagePickerController()
+        picker.delegate = context.coordinator
+        return picker
+    }
+
+    func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {}
+}
+
+// MARK: This 'update' function was used by the old save button.
+func updateChildProfile(child: Child, guardianID: String,
+                        completion: @escaping (Bool, Error?) -> Void) {
+    let childID = child.id
+
+    if let avatarName = child.imageName, !avatarName.isEmpty {
+        saveToFirestore(childID: childID, avatarName: avatarName, child: child, guardianID: guardianID, completion: completion)
+    } else {
+        saveToFirestore(childID: childID, avatarName: nil, child: child, guardianID: guardianID, completion: completion)
+    }
+}
+
+// MARK: This 'save' function was used by the old 'updateChildProfile' function.
+func saveToFirestore(childID: String, avatarName: String?, child: Child, guardianID: String,
+                     completion: @escaping (Bool, Error?) -> Void) {
+    let db = Firestore.firestore()
+    let childRef = db.collection("guardians").document(guardianID).collection("children").document(childID)
+
+    var data: [String: Any] = [
+        "name": child.name,
+        "color": colorToString(colorFromString(child.color)) // Note: This calls the new colorToString
+    ]
+
+    if let avatarName = avatarName {
+        data["imageName"] = avatarName
+    }
+
+    childRef.updateData(data) { error in
+        DispatchQueue.main.async {
+            if let error = error {
+                print("❌ Error updating profile: \(error.localizedDescription)")
+                completion(false, error)
+            } else {
+                print("✅ Profile updated successfully.")
+                completion(true, nil)
+            }
+        }
+    }
+}
+
+// MARK: These navigation helpers were in the old code but replaced in the new one.
+@ViewBuilder
+func navigationCard<Destination: View>(title: String, systemImage: String, destination: Destination) -> some View {
+    NavigationLink(destination: destination) {
+        HStack {
+            Image(systemName: systemImage)
+                .font(.system(size: 20))
+                .foregroundColor(Color("Blue"))
+                .frame(width: 30)
+
+            Text(title)
+                .foregroundColor(.primary)
+                .font(.subheadline)
+
+            Spacer()
+
+            Image(systemName: "chevron.right")
+                .foregroundColor(.gray)
+        }
+        .padding()
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color.white)
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.gray.opacity(0.2), lineWidth: 1))
+        )
+        .shadow(color: Color.black.opacity(0.05), radius: 3, x: 0, y: 2)
+    }
+}
+
+@ViewBuilder
+func navigationBox<Destination: View>(title: String, systemImage: String, destination: Destination) -> some View {
+    NavigationLink(destination: destination) {
+        HStack {
+            Image(systemName: systemImage)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 24, height: 24)
+                .foregroundColor(Color("Blue"))
+                .padding(.leading, 10)
+
+            Spacer()
+
+            Text(title)
+                .font(.subheadline)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity)
+                .foregroundColor(.primary)
+
+            Spacer()
+
+            Image(systemName: "chevron.right")
+                .foregroundColor(.gray)
+                .padding(.trailing, 10)
+        }
+        .frame(height: 60)
+        .background(Color("navBG"))
+        .cornerRadius(20)
+        .shadow(color: Color("ColorGray").opacity(0.3), radius: 5, x: 0, y: 4)
+    }
 }

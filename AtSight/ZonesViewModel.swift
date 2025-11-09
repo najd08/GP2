@@ -111,41 +111,48 @@ class ZonesViewModel: ObservableObject {
     //MARK: - Functions:
     //Load the saved zones for the current child
     func fetchZones() {
-        guard let guardianID = Auth.auth().currentUser?.uid else { return }
-        let db = Firestore.firestore()
-        let childRef = db.collection("guardians").document(guardianID).collection("children").document(childID)
+            guard let guardianID = Auth.auth().currentUser?.uid else { return }
+            let db = Firestore.firestore()
+            let childRef = db.collection("guardians").document(guardianID).collection("children").document(childID)
 
-        let group = DispatchGroup()
-        var fetchedZones: [Zone] = []
+            let group = DispatchGroup()
+            var fetchedZones: [Zone] = []
 
-        for collection in ["safeZone", "unSafeZone"] {
-            group.enter()
-            childRef.collection(collection).getDocuments { snapshot, error in
-                if let documents = snapshot?.documents {
-                    for doc in documents {
-                        let data = doc.data()
-                        if let geo = data["coordinate"] as? GeoPoint,
-                           let name = data["zoneName"] as? String,
-                           let isSafe = data["isSafeZone"] as? Bool,
-                           let size = data["zoneSize"] as? Double {
-                            let zone = Zone(
-                                coordinate: CLLocationCoordinate2D(latitude: geo.latitude, longitude: geo.longitude),
-                                zoneName: name,
-                                isSafeZone: isSafe,
-                                zoneSize: size
-                            )
-                            fetchedZones.append(zone)
+            for collection in ["safeZone", "unSafeZone"] {
+                group.enter()
+                childRef.collection(collection).getDocuments { snapshot, error in
+                    
+                    // MARK: FIX - Added error handling here
+                    if let error = error {
+                        print("❌ Error fetching zones from '\(collection)': \(error.localizedDescription)")
+                        // This is likely a Firestore Security Rules issue.
+                    }
+                    
+                    if let documents = snapshot?.documents {
+                        for doc in documents {
+                            let data = doc.data()
+                            if let geo = data["coordinate"] as? GeoPoint,
+                               let name = data["zoneName"] as? String,
+                               let isSafe = data["isSafeZone"] as? Bool,
+                               let size = data["zoneSize"] as? Double {
+                                let zone = Zone(
+                                    coordinate: CLLocationCoordinate2D(latitude: geo.latitude, longitude: geo.longitude),
+                                    zoneName: name,
+                                    isSafeZone: isSafe,
+                                    zoneSize: size
+                                )
+                                fetchedZones.append(zone)
+                            }
                         }
                     }
+                    group.leave()
                 }
-                group.leave()
+            }
+
+            group.notify(queue: .main) {
+                self.zones = fetchedZones
             }
         }
-
-        group.notify(queue: .main) {
-            self.zones = fetchedZones
-        }
-    }
     
     //function to add the specified zone to the "zones" list:
     func addZone(coordinates: CLLocationCoordinate2D, size: Double, isSafe: Bool, name: String) {

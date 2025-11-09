@@ -2,9 +2,12 @@
 //  MainView.swift
 //  AtSight
 //
-//  Edit by Riyam: modified line 24 for page navigation.
-//  Updated by Leon on 28/10/2025: Added AlertPage overlay for continuous zone monitoring.
+//  Updated by Leon on 28/10/2025: Added AlertPage overlay for continuous zone monitoring. ❌ commented out.
 //
+
+// fixed home button on nav bar... ✅
+// ZoneAlertZimulation file now runs in the background and monitors the location and sends alerts for all children! ✅✅✅
+//merged 🤝
 
 import SwiftUI
 import FirebaseFirestore
@@ -17,91 +20,127 @@ struct MainView: View {
     @State private var expandedChild: Child? = nil
     @State private var children: [Child] = [] // Store retrieved children
 
+    // MARK: New state variable to force HomeView to reload (from old code)
+    @State private var homeViewID = UUID()
+
     @EnvironmentObject var appState: AppState
 
     var body: some View {
         ZStack {
             Color("navBG").ignoresSafeArea()
-
             VStack(spacing: 0) {
-                // MARK: - Content Area
+                // Content Area
                 ZStack {
                     switch selectedTab {
                     case 0:
                         NotificationsHistory()
                     case 1:
                         HomeView(selectedChild: $selectedChild, expandedChild: $expandedChild)
+                            .id(homeViewID) // MARK: FIX: Attach the ID here
                     case 2:
                         SettingsView()
                     default:
                         HomeView(selectedChild: $selectedChild, expandedChild: $expandedChild)
+                            .id(homeViewID) // MARK: FIX: Attach the ID here
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                // MARK: - Custom Tab Bar
+                // MARK: This 'if' block now contains the complete, fixed tab bar (from old code)
                 if selectedTab == 0 || selectedTab == 1 || selectedTab == 2 {
                     Spacer()
 
-                    HStack {
-                        Button(action: { selectedTab = 0 }) {
-                            VStack {
-                                Image(systemName: selectedTab == 0 ? "bell.fill" : "bell")
-                                    .font(.system(size: 24))
-                                Text("Notifications")
-                                    .font(.caption2)
+                    // MARK: This ZStack now manages all 3 buttons for a stable layout
+                    ZStack(alignment: .bottom) {
+                        
+                        // MARK: Layer 1: The tab bar background and side buttons
+                        HStack {
+                            // Notifications Button
+                            Button(action: { selectedTab = 0 }) {
+                                VStack {
+                                    Image(systemName: selectedTab == 0 ? "bell.fill" : "bell")
+                                        .font(.system(size: 24))
+                                    Text("Notifications")
+                                        .font(.caption2)
+                                }
+                                .foregroundColor(selectedTab == 0 ? Color("Blue") : .gray)
                             }
-                            .foregroundColor(selectedTab == 0 ? Color("Blue") : .gray)
-                        }
-                        .frame(maxWidth: .infinity)
+                            .frame(maxWidth: .infinity)
 
-                        Button(action: { selectedTab = 2 }) {
-                            VStack {
-                                Image(systemName: selectedTab == 2 ? "gearshape.fill" : "gearshape")
-                                    .font(.system(size: 24))
-                                Text("Settings")
-                                    .font(.caption2)
+                            // MARK: This empty space leaves room for the Home button
+                            Spacer().frame(width: 70)
+                            
+                            // Settings Button
+                            Button(action: { selectedTab = 2 }) {
+                                VStack {
+                                    Image(systemName: selectedTab == 2 ? "gearshape.fill" : "gearshape")
+                                        .font(.system(size: 24))
+                                    Text("Settings")
+                                        .font(.caption2)
+                                }
+                                .foregroundColor(selectedTab == 2 ? Color("Blue") : .gray)
                             }
-                            .foregroundColor(selectedTab == 2 ? Color("Blue") : .gray)
+                            .frame(maxWidth: .infinity)
                         }
-                        .frame(maxWidth: .infinity)
-                    }
-                    .frame(height: 70)
-                    .background(Color("navBG"))
-                    .clipShape(RoundedRectangle(cornerRadius: 30))
-                    .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: -2)
-                }
-            }
+                        .frame(height: 70)
+                        .background(Color("navBG"))
+                        .clipShape(RoundedRectangle(cornerRadius: 30))
+                        .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: -2)
+                        
+                        // MARK: Layer 2: The floating Home Button
+                        // (✅ يظهر فقط بالصفحات المحددة)
+                        Button(action: {
+                            // MARK: FIX: This logic now handles popping to root
+                            if selectedTab == 1 {
+                                // If we're already on tab 1, force a refresh by changing the ID
+                                homeViewID = UUID()
+                            } else {
+                                // Otherwise, just switch to tab 1
+                                selectedTab = 1
+                            }
+                        }) {
+                            ZStack {
+                                Circle()
+                                    .fill(selectedTab == 1 ? Color("Blue") : .gray.opacity(0.3))
+                                    .frame(width: 70, height: 70)
+                                    .shadow(color: .black.opacity(0.3), radius: 8, x: 0, y: 4)
 
-            // MARK: - Floating Home Button
-            if selectedTab == 0 || selectedTab == 1 || selectedTab == 2 {
-                Button(action: { selectedTab = 1 }) {
-                    ZStack {
-                        Circle()
-                            .fill(selectedTab == 1 ? Color("Blue") : .gray.opacity(0.3))
-                            .frame(width: 70, height: 70)
-                            .shadow(color: .black.opacity(0.3), radius: 8, x: 0, y: 4)
-
-                        Image(systemName: "house.fill")
-                            .foregroundColor(.white)
-                            .font(.system(size: 30, weight: .bold))
+                                Image(systemName: "house.fill")
+                                    .foregroundColor(.white)
+                                    .font(.system(size: 30, weight: .bold))
+                            }
+                        }
+                        // MARK: This offset is relative to the ZStack, not the screen center
+                        // MARK: This makes it safe for all device sizes.
+                        .offset(y: -30)
                     }
+                    // MARK: Give the ZStack a fixed height to contain the popped-out button
+                    .frame(height: 100)
                 }
-                .offset(y: 360)
             }
         }
         .ignoresSafeArea(.container, edges: .bottom)
+        // ✅ Overlay running silently in the background (from new code)
+//        .overlay(
+//            AlertPage()
+//                .frame(width: 0, height: 0) // hidden but active
+//                .opacity(0)
+//        )
+        .overlay(
+                    Group {
+                        // MARK: Loop over all children, not just 'selectedChild'
+                        ForEach(children) { child in
+                            ZoneAlertSimulation(childID: child.id)
+                                .frame(width: 0, height: 0) // hidden but active
+                                .opacity(0)
+                        }
+                    }
+                )
+
         .onAppear {
             fetchChildren()
         }
-        .preferredColorScheme(isDarkMode ? .dark : .light)
-
-        // ✅ Overlay running silently in the background
-        .overlay(
-            AlertPage()
-                .frame(width: 0, height: 0) // hidden but active
-                .opacity(0)
-        )
+        .preferredColorScheme(isDarkMode ? .dark : .light) // ✅ إضافة تحكم الدارك مود هنا
     }
 
     // MARK: - Fetch Children Data

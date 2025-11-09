@@ -6,6 +6,10 @@
 //  Updated: Added support for "watch_removed" event.
 //
 
+//Took Najs's fixed code from WhatsApp. 👤
+//Add delete notification button? ❓
+//should display time stamp for each notification. ✅
+
 import SwiftUI
 import Firebase
 import FirebaseFirestore
@@ -61,6 +65,14 @@ struct NotificationsHistory: View {
     @State private var notifications: [NotificationItem] = []
     @State private var isLoading = true
 
+    // DATE FORMATTER
+    private var dateFormatter: DateFormatter {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .short
+        formatter.timeStyle = .short
+        return formatter
+    }
+    
     var body: some View {
         NavigationView {
             ScrollView {
@@ -89,6 +101,12 @@ struct NotificationsHistory: View {
                                         .font(.subheadline)
                                         .foregroundColor(Color("NotificationBody"))
                                         .fixedSize(horizontal: false, vertical: true)
+                                    
+                                    // Display notification date and time.
+                                        Text(dateFormatter.string(from: notification.timestamp.dateValue()))
+                                            .font(.subheadline)
+                                            .foregroundColor(.gray)
+                                            .padding(.top, 2) // Add a little space
                                 }
 
                                 Spacer()

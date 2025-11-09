@@ -1,23 +1,5 @@
-//
-//  AddZonePage.swift
-//  Atsight
-//
-//  Created by Najd Alsabi on 21/04/2025.
-//
-
-
-//Changes to be made:
-// changed textfiled's appearance ✅
-// adjusted pin location's offset ✅
-// get user's current location (his annotation needs to be made) ✅
-// zoom in automatically when adding a new annotation ✅
-//change zoom in and zoom out color to be like Najd's ✅
-//add zone name on top of the zone circle ✅
-//zones only appear after I go back from "show zones" page, fix that. ✅
-//fixed save and fetch zones functions ✅
-//fixes to compiler errors are written with MARKs ✅
-//cleaned code and removed redundancy, now the struct and redundant functions are called from "ZonesViewModel" ✅
-//keyboard now dismisses if the user clicks away from it. ✅
+//fixed zones fetching by changing firebase rules! ✅
+//removed the need for tap gesture due to a conflict from the new update. now you should be able to move the pin anywhere you want then add the zone, no tapping on screen needed. ✅
 
 import SwiftUI
 import MapKit
@@ -51,7 +33,7 @@ struct AddZonePage: View {
     
     //temporary zone values that the user can adjust before saving the zone
     @State private var tempZoneCoordinates = CLLocationCoordinate2D.userLocation
-    @State private var tempZoneSize: Double = 50 // Default radius in meters
+    @State private var tempZoneSize: Double = 25 // Default radius in meters
     @State private var tempIsSafeZone = true
     @State private var tempZoneName = ""
     
@@ -62,6 +44,9 @@ struct AddZonePage: View {
     
     // State to track keyboard visibility.
     @State private var isKeyboardVisible = false
+    
+    // State to fix initial zone size bug
+    @State private var mapIsReady = false
     
     // Conversion factor - explicitly defining meters per unit
     let metersPerUnit: Double = 1.0 // 1 unit = 1 meter for radius
@@ -95,8 +80,8 @@ struct AddZonePage: View {
             Map(coordinateRegion: $cameraPosition,
                 interactionModes: [.all],
                 showsUserLocation: true,
-                annotationItems: viewModel.zones + [tempZone]) { zone in
-                MapAnnotation(coordinate: zone.coordinate) {
+                // Only show tempZone when mapIsReady to prevent size bug
+                annotationItems: mapIsReady ? (viewModel.zones + [tempZone]) : []) { zone in                MapAnnotation(coordinate: zone.coordinate) {
                     ZoneAnnotationView(zone: zone, isTemp: zone.id == tempZone.id)
                         .frame(width: calculateZoneSize(zone.zoneSize),
                                height: calculateZoneSize(zone.zoneSize))
@@ -105,13 +90,12 @@ struct AddZonePage: View {
             .onAppear {
                 viewModel.fetchZones() //fetch zones when the map loads
                 viewModel.requestLocationPermission() // Ask for location permission
+                updateOffsetPinPosition() // Set initial pin position
             }
             // Convert the tap location to map coordinates wherever the user presses:
             .onTapGesture { location in
                 self.hideKeyboard() // Hide keyboard on tap
-                let coordinate = convertToCoordinate(location: location)
-                tempZoneCoordinates = coordinate
-                updateCameraPositionWithOffset(to: coordinate, zoom: true)
+                // Removed conflicting logic that set pin on tap
             }
             // React to user location updates to center the map once.
             .onReceive(viewModel.$userLocation) { userLocation in
@@ -128,12 +112,25 @@ struct AddZonePage: View {
             
             // Zoom buttons positioned above the overlay
             VStack {
-                Spacer()
+                Spacer().allowsHitTesting(false) // <-- THIS IS THE FIX
                 
                 // Zoom control buttons
                 HStack {
                     Spacer()
                     VStack(spacing: 12) {
+                        // MARK: - RECENTER BUTTON ADDED
+                        Button(action: {
+                            if let userLocation = viewModel.userLocation {
+                                updateCameraPositionWithOffset(to: userLocation, zoom: true)
+                            } else {
+                                // This will either ask for permission or re-trigger location update
+                                viewModel.requestLocationPermission()
+                            }
+                        }) {
+                            Image(systemName: "location.fill")
+                                .font(.title2).padding(10).background(Color.white).clipShape(Circle()).shadow(radius: 2)
+                        }
+                        
                         // Zoom in button
                         Button(action: { zoomIn() }) {
                             Image(systemName: "plus.magnifyingglass")
@@ -157,21 +154,32 @@ struct AddZonePage: View {
                 ) {
                     // Call the ViewModel's addZone function
                     viewModel.addZone(coordinates: tempZoneCoordinates,
-                                  size: tempZoneSize,
-                                  isSafe: tempIsSafeZone,
-                                  name: tempZoneName)
+                                      size: tempZoneSize,
+                                      isSafe: tempIsSafeZone,
+                                      name: tempZoneName)
                     // Reset the text field after adding a zone
                     tempZoneName = ""
                 }
             }
             
-            // Add a transparent overlay that only appears with the keyboard to handle dismissal gestures.
-            if isKeyboardVisible {
-                Color.white.opacity(0.01)
-                    .onTapGesture { hideKeyboard() }
-                    .gesture(DragGesture().onChanged { _ in hideKeyboard() })
-                    .ignoresSafeArea()
-            }
+            // MARK: - MODIFICATION HERE
+             // Sync the temp zone's coordinates with the map's center
+             .onChange(of: cameraPosition.center.latitude) { _ in
+                 updateOffsetPinPosition()
+                 self.hideKeyboard()
+             }
+             .onChange(of: cameraPosition.center.longitude) { _ in
+                 updateOffsetPinPosition()
+                 self.hideKeyboard()
+             }
+             // Add listener for zoom to scale offset and fix size bug
+             .onChange(of: cameraPosition.span.latitudeDelta) { _ in
+                 updateOffsetPinPosition()
+                 if !mapIsReady {
+                     mapIsReady = true // Mark map as ready on first span update
+                 }
+             }
+             // MARK: - END MODIFICATION
 
         }//end zstack
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
@@ -214,6 +222,18 @@ struct AddZonePage: View {
     
     
     //MARK: - Functions & Struct:
+    
+    /// Calculates the new coordinates for the temp zone, offset slightly above the map's center.
+    private func updateOffsetPinPosition() {
+        // Calculate a latitude offset (10% of the map's current visible height)
+        let latitudeOffset = cameraPosition.span.latitudeDelta * 0.1
+        // Apply the offset (add to latitude to move *north* or "up" on the map)
+        tempZoneCoordinates = CLLocationCoordinate2D(
+            latitude: cameraPosition.center.latitude + latitudeOffset,
+            longitude: cameraPosition.center.longitude
+        )
+    }
+    
     //updates camera position with an offset to account for the bottom UI.
     private func updateCameraPositionWithOffset(to coordinate: CLLocationCoordinate2D, zoom: Bool = false) {
         withAnimation(.easeInOut) {
@@ -249,6 +269,8 @@ struct AddZonePage: View {
     //function to adjust the zone's circle size when zooming:
     func calculateZoneSize(_ zoneSize: Double) -> CGFloat {
         let metersPerPoint = cameraPosition.span.latitudeDelta * 111000
+        // Guard against division by zero on first load
+        guard metersPerPoint > 0 else { return 0 }
         let zoomFactor = CGFloat(metersPerPoint)
         let baseSize: CGFloat = CGFloat(zoneSize * 2)
         return baseSize / zoomFactor * 5000
@@ -327,17 +349,17 @@ struct ZoneControlsOverlay: View {
                     VStack {
                         // Zone name text field
                         TextField("Enter your zone's name", text: $tempZoneName)
-                            .padding().background(Color("TextFieldBg")).cornerRadius(20).padding()
+                            .padding().background(Color("TextFieldBg")).cornerRadius(20).padding([.horizontal, .top])
                         // Safe / Unsafe buttons:
                         HStack {
                             Button { tempIsSafeZone = true } label: {
-                                Text("Safe").fontWeight(.bold).frame(maxWidth: .infinity).padding()
+                                Text("Safe").fontWeight(.bold).frame(maxWidth: .infinity).padding(10)
                                     .background(tempIsSafeZone ? Color.green : Color.gray.opacity(0.3))
                                     .foregroundColor(tempIsSafeZone ? .white : .black)
                                     .clipShape(RoundedRectangle(cornerRadius: 10))
                             }.padding([.leading, .bottom])
                             Button { tempIsSafeZone = false } label: {
-                                Text("Unsafe").fontWeight(.bold).frame(maxWidth: .infinity).padding()
+                                Text("Unsafe").fontWeight(.bold).frame(maxWidth: .infinity).padding(10)
                                     .background(tempIsSafeZone ? Color.gray.opacity(0.3) : Color.red)
                                     .foregroundColor(tempIsSafeZone ? .black : .white)
                                     .clipShape(RoundedRectangle(cornerRadius: 10))
@@ -352,14 +374,14 @@ struct ZoneControlsOverlay: View {
                             .frame(maxWidth: .infinity, alignment: .leading).background(Color.white.opacity(0.7))
                             .cornerRadius(8).padding(.horizontal).padding(.bottom)
                     }
-                    .background(Color.mint.opacity(0.25)).border(Color.green).cornerRadius(10).padding()
+                        .background(Color.mint.opacity(0.25)).border(Color.green).cornerRadius(10).padding().padding(.bottom, -20)
                 )
             // Add Zone button:
             Button(action: addZoneAction) {
                 Text("Add").font(.title2).fontWeight(.bold).foregroundColor(.white)
                     .padding(.horizontal, 20).padding()
             }
-            .background(Color("Blue")).cornerRadius(30).padding().padding(.bottom)
+            .background(Color("Blue")).cornerRadius(30).padding(.bottom)
         }
     }
 }

@@ -1,9 +1,6 @@
-//
-//  AddChildView.swift
-//  Atsight
-//
-//  Created by Najd Alsabi on 22/03/2025.
-//
+//Took Najs's fixed code from WhatsApp. 👤
+//fixed child color problem that made it default to gray (line 267).
+//fixed textfield color for dark mode (line 176). ✅
 
 import SwiftUI
 import FirebaseFirestore
@@ -176,7 +173,7 @@ struct AddChildNameView: View {
                 // Text Field
                 TextField("Enter name", text: $childName)
                     .padding()
-                    .background(Color.white)
+                    .background(Color("TextFieldBg")) // fixed for dark mode
                     .cornerRadius(20)
                     .overlay(
                         RoundedRectangle(cornerRadius: 20)
@@ -267,7 +264,7 @@ struct AddChildNameView: View {
             let child = Child(
                 id: UUID().uuidString,
                 name: childName,
-                color: selectedGender == "Boy" ? "Blue" : "Pink",
+                color: selectedGender == "Boy" ? "blue" : "pink", //fixed colors here to lower case
                 imageData: nil,
                 imageName: nil
             )

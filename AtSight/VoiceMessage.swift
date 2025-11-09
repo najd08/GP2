@@ -5,17 +5,23 @@
 //  Updated by Leon on 29/10/2025
 //  ✅ Shows and saves notification only once (shared between Main & Chat)
 //  ✅ Syncs Firestore notifications with local ones
-//
+
+//  Edits by Riyam:
+//  made backgrounds black for dark mode ✅
+//  fixed back button (duplicate removed) ✅
+//  Added local notification sounds with child's customized sounds ✅
 
 import SwiftUI
 import AVFoundation
 import UserNotifications
 import FirebaseFirestore
+import FirebaseAuth
 
 struct VoiceChatPhone: View {
     let guardianId: String
     let childId: String
     let childName: String
+    @Environment(\.dismiss) private var dismiss
 
     @State private var messages: [VoiceMessage] = []
     @State private var recorder: AVAudioRecorder?
@@ -27,7 +33,6 @@ struct VoiceChatPhone: View {
     @State private var isUploading = false
     @State private var timer: Timer?
 
-    // ✅ Shared flag across all views (prevents duplicates globally)
     @AppStorage("lastVoiceNotifiedURL") private var sharedLastNotifiedURL: String = ""
 
     private let uploadURL = URL(string: "https://uploadvoicemessageapi-7gq4boqq6a-uc.a.run.app")!
@@ -35,19 +40,28 @@ struct VoiceChatPhone: View {
 
     var body: some View {
         ZStack {
-            Color.white.ignoresSafeArea()
+            Color(.systemBackground).ignoresSafeArea()
 
             VStack(spacing: 0) {
                 // MARK: Header
                 HStack {
+                    Button(action: { dismiss() }) {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 20, weight: .semibold))
+                            .foregroundColor(Color("BlackFont"))
+                    }
+
                     Image(systemName: "person.circle.fill")
                         .resizable()
                         .frame(width: 34, height: 34)
                         .foregroundColor(.gray)
+
                     Text(childName)
                         .font(.headline)
-                        .foregroundColor(.black)
+                        .foregroundColor(.primary)
+
                     Spacer()
+
                     Button(action: fetchMessages) {
                         Image(systemName: "arrow.clockwise")
                             .font(.system(size: 18, weight: .semibold))
@@ -55,7 +69,7 @@ struct VoiceChatPhone: View {
                     }
                 }
                 .padding()
-                .background(Color.white.opacity(0.95))
+                .background(Color(.systemBackground).opacity(0.95))
                 .shadow(radius: 1)
 
                 // MARK: Chat Messages
@@ -93,9 +107,7 @@ struct VoiceChatPhone: View {
                             }
                         }
                     }
-                    .onAppear {
-                        startAutoRefresh()
-                    }
+                    .onAppear { startAutoRefresh() }
                     .onChange(of: messages.count) { _ in
                         if let last = messages.last {
                             withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
@@ -160,81 +172,92 @@ struct VoiceChatPhone: View {
                     }
                 }
                 .padding(.bottom, 16)
-                .background(Color.white)
+                .background(Color(.systemBackground))
             }
         }
-        .onAppear {
-            requestNotificationPermission()
-        }
+        .onAppear { requestNotificationPermission() }
         .onDisappear {
             recorder?.stop()
             player?.pause()
             stopAutoRefresh()
         }
+        // Prevent system nav bar (which caused duplicate back button)
+        .navigationBarBackButtonHidden(true)
+        .navigationBarHidden(true)
     }
 
     // MARK: - Notifications
     private func requestNotificationPermission() {
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
-            if granted {
-                print("✅ Notification permission granted")
-            } else {
-                print("⚠️ Notification permission denied:", error?.localizedDescription ?? "")
-            }
-        }
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
     }
 
-    /// ✅ Shows and saves notification once per message globally
+    // MARK: - Notifications
     private func showAndSaveNotificationOnce(for audioURL: String, childName: String) {
         guard sharedLastNotifiedURL != audioURL else {
             print("🚫 Skipping duplicate notification for \(childName)")
             return
         }
-
         sharedLastNotifiedURL = audioURL
 
-        // 🔔 Show local notification
-        let content = UNMutableNotificationContent()
-        content.title = "New voice message from \(childName)"
-        content.body = "🎙️ \(childName) sent you a new voice message."
-        content.sound = .default
-
-        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
-        let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: trigger)
-        UNUserNotificationCenter.current().add(request)
-
-        print("🔔 Notification displayed once for \(childName)")
-
-        // 🧾 Save notification to Firestore
+        guard let guardianID = Auth.auth().currentUser?.uid else { return }
         let db = Firestore.firestore()
-        let notifRef = db
-            .collection("guardians")
-            .document(guardianId)
-            .collection("notifications")
-            .document()
 
-        let data: [String: Any] = [
-            "title": "New Voice Message",
-            "body": "\(childName) sent a new voice message 🎙️",
-            "audioURL": audioURL,
-            "timestamp": Timestamp(date: Date())
-        ]
+        // Fetch child's notification sound preference
+        db.collection("guardians").document(guardianID)
+            .collection("children").document(childId)
+            .collection("notifications").document("settings")
+            .getDocument { document, error in
 
-        notifRef.setData(data) { error in
-            if let error = error {
-                print("❌ Failed to save notification:", error.localizedDescription)
-            } else {
-                print("✅ Notification saved in Firestore for \(childName)")
+                var soundName = "default_sound"
+
+                if let document = document, document.exists, let data = document.data() {
+                    soundName = data["sound"] as? String ?? "default_sound"
+                    print("✅ Child alert sound: \(soundName)")
+                } else {
+                    print("⚠️ Using default notification sound")
+                }
+
+                // Configure local notification
+                let content = UNMutableNotificationContent()
+                content.title = "New voice message from \(childName)"
+                content.body = "🎙️ \(childName) sent you a new voice message."
+
+                if soundName == "default_sound" {
+                    content.sound = .default
+                } else {
+                    content.sound = UNNotificationSound(named: UNNotificationSoundName("\(soundName).wav"))
+                }
+
+                let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
+                let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: trigger)
+                UNUserNotificationCenter.current().add(request)
+
+                // Save notification in Firestore
+                let notifRef = db.collection("guardians").document(guardianId)
+                    .collection("notifications").document()
+
+                let data: [String: Any] = [
+                    "title": "New Voice Message",
+                    "body": "\(childName) sent a new voice message 🎙️",
+                    "audioURL": audioURL,
+                    "sound": soundName,
+                    "timestamp": Timestamp(date: Date())
+                ]
+
+                notifRef.setData(data) { error in
+                    if let error = error {
+                        print("❌ Failed to save notification:", error.localizedDescription)
+                    } else {
+                        print("✅ Notification saved in Firestore with sound: \(soundName)")
+                    }
+                }
             }
-        }
     }
 
-    // MARK: - Auto Refresh
+
     private func startAutoRefresh() {
         fetchMessages()
-        timer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { _ in
-            fetchMessages()
-        }
+        timer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { _ in fetchMessages() }
     }
 
     private func stopAutoRefresh() {
@@ -242,7 +265,6 @@ struct VoiceChatPhone: View {
         timer = nil
     }
 
-    // MARK: - Fetch Messages
     private func fetchMessages() {
         var comps = URLComponents(url: fetchURL, resolvingAgainstBaseURL: false)!
         comps.queryItems = [
@@ -269,7 +291,6 @@ struct VoiceChatPhone: View {
                         )
                     }.sorted(by: { $0.timestamp < $1.timestamp })
 
-                    // ✅ If new message arrived → show + save once globally
                     if let latest = self.messages.last,
                        latest.sender == "watch",
                        oldMessages.last?.audioURL != latest.audioURL {
@@ -280,7 +301,6 @@ struct VoiceChatPhone: View {
         }.resume()
     }
 
-    // MARK: - Recording Logic
     private func startRecording() {
         let session = AVAudioSession.sharedInstance()
         do {
@@ -300,7 +320,6 @@ struct VoiceChatPhone: View {
             recorder?.record()
             recordedURL = url
             isRecording = true
-            print("🎙️ Recording started")
         } catch {
             print("❌ Recorder error:", error.localizedDescription)
         }
@@ -311,10 +330,8 @@ struct VoiceChatPhone: View {
         recordedDuration = recorder?.currentTime ?? 0
         isRecording = false
         isPreviewing = true
-        print("✅ Recording stopped (\(recordedDuration)s)")
     }
 
-    // MARK: - Upload Logic
     private func uploadToAPI(fileURL: URL) {
         guard !isUploading else { return }
         isUploading = true
@@ -337,14 +354,8 @@ struct VoiceChatPhone: View {
         req.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
         URLSession.shared.dataTask(with: req) { _, resp, err in
-            DispatchQueue.main.async {
-                isUploading = false
-            }
-            if let err = err {
-                print("❌ Upload error:", err.localizedDescription)
-                return
-            }
-            if let http = resp as? HTTPURLResponse {
+            DispatchQueue.main.async { isUploading = false }
+            if err == nil, let http = resp as? HTTPURLResponse {
                 print("✅ Uploaded (status \(http.statusCode))")
                 fetchMessages()
                 isPreviewing = false
@@ -352,14 +363,12 @@ struct VoiceChatPhone: View {
         }.resume()
     }
 
-    // MARK: - Play
     private func playAudio(from urlString: String) {
         guard let url = URL(string: urlString) else { return }
         player = AVPlayer(url: url)
         player?.play()
     }
 
-    // MARK: - Timestamp Formatter
     private func formatTimestamp(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.timeStyle = .short
@@ -367,7 +376,6 @@ struct VoiceChatPhone: View {
     }
 }
 
-// MARK: - Model
 struct VoiceMessage: Identifiable {
     let id: UUID
     let audioURL: String

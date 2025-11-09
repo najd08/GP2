@@ -1,17 +1,8 @@
-//MARK: this page is temporary, it is added to simulate zone alert features from Sprint3 ‼️
+//MARK: this page is meant for debugging, but it now supports the child's real coordinates and displays them on the map (Sprint4 compleated) ✅✅✅
 //TO DO:
-//fetched the zones for current child and their respective names and sizes. ✅
-//added new info property to ask for user location! ❗️
-//add user location detection (for testing) ✅
-//add a textfield to input a child's current cords ✅
-//send alert to guardian if child is in (his) danger zone ✅
-//send alert to guardian if child is out of (his) safe zone ✅
-//the alerts have a more detailed approx position of the child’s new cords. ✅
-//send alerts to db and give a notification to guardian's phone. ✅
-//make notification go off only if conditions are met! and give the right alert sound. ✅
-//give cooldown for the danger zone alerts… ex: after 1min, send alert “your child is still in the danger zone!”
-//connect last known location to db.
-
+//get current child's location coordinates from db (liveLocation). ✅
+//place these coordinates in the simulatedLatitude and simulatedLongitude variables ✅
+//every 2 and a half minutes, check if the current location has changed, if yes, then store the old one in the lastKnownChildLocation variable and update the current child location. ✅
 
 import SwiftUI
 import MapKit
@@ -37,6 +28,7 @@ struct ZoneAlertSimulation: View {
     @State private var simulatedAnnotation: Zone?
     @State private var lastKnownChildLocation: CLLocationCoordinate2D?
     @State private var currentChildLocation: CLLocationCoordinate2D?
+    @State private var locationListener: ListenerRegistration? // For live location
 
     // Child Name for Display... Initial value changed to empty, awaiting fetch from DB.
     @State private var childName: String = ""
@@ -78,6 +70,7 @@ struct ZoneAlertSimulation: View {
                 NotificationManager.instance.requestAuthorization() // Ask for notification permission
                 viewModel.fetchZones()
                 fetchChildName()
+                startLiveLocationListener() // Fulfills TO-DO #1
             }
             .ignoresSafeArea()
 
@@ -146,6 +139,9 @@ struct ZoneAlertSimulation: View {
                 Text("Child Zones").font(.system(size: 24, weight: .bold))
             }
         }
+        .onDisappear {
+            locationListener?.remove() // Stop listening when view closes
+        }
     }
 
     // MARK: - Computed Property
@@ -200,13 +196,20 @@ struct ZoneAlertSimulation: View {
         
         let newLocation = CLLocationCoordinate2D(latitude: lat, longitude: lon)
         
+        // This logic is now also triggered by the timer
         self.lastKnownChildLocation = self.currentChildLocation
         self.currentChildLocation = newLocation
         
+        // Run the checks
+        runZoneChecks(with: newLocation)
+    }
+    
+    // This function contains the logic moved from submitSimulationCords
+    private func runZoneChecks(with newLocation: CLLocationCoordinate2D) {
         let simulatedZone = Zone(coordinate: newLocation, zoneName: "Simulated Location", isSafeZone: true, zoneSize: 0)
         self.simulatedAnnotation = simulatedZone
         updateCameraPosition(to: simulatedZone.coordinate)
-        print("Simulated location set at: \(lat), \(lon)")
+        print("Simulated location set at: \(newLocation.latitude), \(newLocation.longitude)")
         
         // Fetch child's notification settings before checking zones:
         guard let guardianID = Auth.auth().currentUser?.uid else { return }
@@ -252,6 +255,66 @@ struct ZoneAlertSimulation: View {
                     settings: settings
                 )
             }
+    }
+    
+    // MARK: - Firestore Live Location Listener
+    private func startLiveLocationListener() {
+        // TO-DO #1: get current child's location coordinates from db (liveLocation).
+        locationListener?.remove()
+        guard let guardianID = Auth.auth().currentUser?.uid else { return }
+        let db = Firestore.firestore()
+        let docRef = db.collection("guardians").document(guardianID)
+                      .collection("children").document(viewModel.childID)
+                      .collection("liveLocation").document("latest")
+
+        locationListener = docRef.addSnapshotListener { doc, err in
+            if let err = err {
+                print("Error listening to live location: \(err.localizedDescription)")
+                return
+            }
+            
+            if let data = doc?.data(), let c = extractCoordinate(from: data) {
+                // Check if it's different from the last location we *checked*
+                if c.latitude != self.currentChildLocation?.latitude ||
+                   c.longitude != self.currentChildLocation?.longitude {
+                    
+                    print("LiveListener: Detected location change, running checks...")
+                    
+                    // TO-DO #2: place these coordinates in the simulatedLatitude and simulatedLongitude variables
+                    self.simulatedLatitude = String(c.latitude)
+                    self.simulatedLongitude = String(c.longitude)
+                    
+                    // TO-DO #3: store the old one
+                    self.lastKnownChildLocation = self.currentChildLocation
+                    // TO-DO #3: update the current one
+                    self.currentChildLocation = c
+                    
+                    // Run the full check logic
+                    runZoneChecks(with: c)
+                } else {
+                    // Optional: print for debugging
+                    // print("LiveListener: Location unchanged, skipping check.")
+                }
+            }
+        }
+    }
+    
+    // Helper function (from ChildLocationView) to parse coordinates
+    private func extractCoordinate(from data: [String: Any]) -> CLLocationCoordinate2D? {
+        if let coords = data["coordinate"] as? [Double], coords.count == 2 {
+            return CLLocationCoordinate2D(latitude: coords[0], longitude: coords[1])
+        }
+        if let lat = data["lat"] as? CLLocationDegrees,
+           let lon = data["lon"] as? CLLocationDegrees {
+            return CLLocationCoordinate2D(latitude: lat, longitude: lon)
+        }
+        if let latStr = data["lat"] as? String,
+           let lonStr = data["lon"] as? String,
+           let lat = CLLocationDegrees(latStr),
+           let lon = CLLocationDegrees(lonStr) {
+            return CLLocationCoordinate2D(latitude: lat, longitude: lon)
+        }
+        return nil
     }
     
 }//end struct

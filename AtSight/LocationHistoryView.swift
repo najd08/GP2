@@ -1,3 +1,7 @@
+// Edit by Riyam: updated the back button to fit Dark Mode (line 266). ✅
+// updated the mappin icon color from blue to black for consistency (line 301). ✅
+// Added filter by time (last 24 hours, 7 days, 30 days) ✅
+
 import SwiftUI
 import MapKit
 import Firebase
@@ -7,8 +11,19 @@ import FirebaseAuth
 struct LocationHistoryView: View {
     var childID: String
     @State private var locations: [Location] = []
+    @State private var selectedLocation: Location?
     @Environment(\.presentationMode) var presentationMode
     @State private var isLoading = true
+
+    // MARK: - Filter State
+    @State private var selectedFilter: TimeFilterOption = .today // Default is 24 Hours
+    
+    // MARK: - Filter Options Enum
+    enum TimeFilterOption: String, CaseIterable {
+        case today = "last 24 Hours"
+        case week = "last 7 Days"
+        case month = "last 30 Days"
+    }
 
     var body: some View {
         VStack {
@@ -41,12 +56,27 @@ struct LocationHistoryView: View {
                 .padding(.top, 40)
                 .padding(.bottom, 10)
 
+            // MARK: - Filter Picker
+            Picker("Filter", selection: $selectedFilter) {
+                ForEach(TimeFilterOption.allCases, id: \.self) { option in
+                    Text(option.rawValue).tag(option)
+                }
+            }
+            .pickerStyle(SegmentedPickerStyle())
+            .padding(.horizontal)
+            .padding(.vertical, 10)
+            .onChange(of: selectedFilter) { _ in
+                // Re-fetch data when the filter changes
+                fetchLocations()
+            }
+
             if isLoading {
                 ProgressView("Loading...")
                     .padding()
             } else {
                 ScrollView {
                     VStack(spacing: 14) {
+                        // The 'locations' array is now always filtered
                         ForEach(locations) { location in
                             NavigationLink(
                                 destination: MapView(
@@ -60,8 +90,9 @@ struct LocationHistoryView: View {
                         }
                         .padding(.top, 5)
 
+                        // Updated empty state message
                         if locations.isEmpty {
-                            Text("No location history found.")
+                            Text("No location history found for this filter.")
                                 .foregroundColor(.gray)
                                 .padding()
                         }
@@ -77,7 +108,7 @@ struct LocationHistoryView: View {
         }
     }
 
-    // MARK: - Fetch
+    // MARK: - Fetch (MODIFIED)
     func fetchLocations() {
         let guardianID = Auth.auth().currentUser?.uid
             ?? UserDefaults.standard.string(forKey: "guardianID")
@@ -94,12 +125,34 @@ struct LocationHistoryView: View {
 
         isLoading = true
         let db = Firestore.firestore()
+        
+        // --- START OF FILTER LOGIC ---
+        // 1. Calculate the start date for the filter
+        let now = Date()
+        let calendar = Calendar.current
+        let startDate: Date
+        
+        switch selectedFilter {
+        case .today:
+            startDate = calendar.date(byAdding: .day, value: -1, to: now) ?? now
+        case .week:
+            startDate = calendar.date(byAdding: .day, value: -7, to: now) ?? now
+        case .month:
+            startDate = calendar.date(byAdding: .day, value: -30, to: now) ?? now
+        }
+        // --- END OF FILTER LOGIC ---
+        
+        
+        // 2. Build the query WITH the filter
         db.collection("guardians")
             .document(guardianID)
             .collection("children")
             .document(childID)
             .collection("locationHistory")
+            // This line applies the filter in Firestore
+            .whereField("timestamp", isGreaterThanOrEqualTo: Timestamp(date: startDate))
             .order(by: "timestamp", descending: true)
+            // Note: Limit is applied *after* the filter
             .limit(to: 30)
             .getDocuments { snapshot, error in
                 isLoading = false
@@ -110,6 +163,7 @@ struct LocationHistoryView: View {
 
                 guard let documents = snapshot?.documents else {
                     print("⚠️ No documents found.")
+                    self.locations = [] // Clear list if no docs
                     return
                 }
 
@@ -126,19 +180,18 @@ struct LocationHistoryView: View {
                     let lat = coord[0]
                     let lng = coord[1]
 
-                    // Location naming
+                    // ✅ Title fallback: streetName → zoneName → placeName → "Unknown"
                     let street   = (data["streetName"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
                     let zone     = (data["zoneName"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
                     let place    = (data["placeName"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
                     let title    = [street, zone, place].compactMap { $0 }.first(where: { !$0.isEmpty }) ?? "Unknown"
 
-                    // Determine color
-                    let colorName = (data["color"] as? String) ?? (data["isSafeZone"] as? Bool == false ? "red" : "green")
-
+                    // Optional extras (most docs ما فيها address/distance)
                     let address  = (data["address"] as? String) ?? (street ?? "—")
                     let distance = (data["distance"] as? String) ?? "—"
-                    let ts = (data["timestamp"] as? Timestamp)?.dateValue() ?? Date()
+                    let isSafe   = (data["isSafeZone"] as? Bool) ?? true
 
+                    let ts = (data["timestamp"] as? Timestamp)?.dateValue() ?? Date()
                     let df = DateFormatter()
                     df.dateFormat = "yyyy/MM/dd"
                     let dateStr = df.string(from: ts)
@@ -153,7 +206,7 @@ struct LocationHistoryView: View {
                         distance: distance,
                         latitude: lat,
                         longitude: lng,
-                        color: colorName
+                        isSafeZone: isSafe
                     )
                 }
             }
@@ -170,7 +223,7 @@ struct Location: Identifiable, Hashable {
     let distance: String
     let latitude: Double
     let longitude: Double
-    let color: String // 🔹 new: color name ("red", "orange", "green")
+    let isSafeZone: Bool
 }
 
 // MARK: - Map View
@@ -213,11 +266,7 @@ struct MapView: View {
                         .foregroundColor(Color("BlackFont"))
                         .font(.system(size: 20, weight: .bold))
                         .padding(8)
-                        .background(Color.white)
-                        .clipShape(Circle())
-                }
-                .padding(.leading, -10)
-
+                }.padding(.leading, -10)
                 Spacer()
 
                 Text(locationName)
@@ -242,14 +291,14 @@ struct MapView: View {
                     MapAnnotation(coordinate: item.coordinate) {
                         ZStack {
                             Circle()
-                                .fill(Color.blue.opacity(0.3))
+                                .fill(Color.green.opacity(0.4))
                                 .frame(width: 42, height: 42)
 
                             Image(systemName: "mappin")
                                 .resizable()
                                 .scaledToFit()
                                 .frame(width: 24, height: 24)
-                                .foregroundColor(.blue)
+                                .foregroundColor(.black) //changed from blue to black (by Riyam)
                         }
                     }
                 }
@@ -277,6 +326,7 @@ struct MapView: View {
                     }
                 }
                 .padding()
+                .clipShape(RoundedRectangle(cornerRadius: 15))
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                 .padding(.trailing, 20)
                 .padding(.top, 20)
@@ -295,22 +345,20 @@ struct LocationMarker: Identifiable {
     var coordinate: CLLocationCoordinate2D
 }
 
-// MARK: - Location Row (colored)
+// MARK: - Location Row
 struct LocationRow: View {
     let location: Location
 
     var body: some View {
-        let color = colorFor(location.color) // ✅ انقل التعريف هنا فوق
-
-        HStack(alignment: .center, spacing: 12) {
-            Image(systemName: iconFor(location.color))
-                .foregroundColor(color)
+        HStack(alignment: .center) {
+            Image(systemName: location.isSafeZone ? "checkmark.shield" : "exclamationmark.triangle")
+                .foregroundColor(location.isSafeZone ? .green : .red)
                 .font(.title2)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(location.name)
                     .font(.headline)
-                    .foregroundColor(color)
+                    .foregroundColor(location.isSafeZone ? .green : .red)
 
                 Text("\(location.date) \(location.time)")
                     .font(.subheadline)
@@ -322,25 +370,7 @@ struct LocationRow: View {
         .frame(maxWidth: .infinity)
         .background(Color("navBG"))
         .cornerRadius(12)
-        .shadow(color: color.opacity(0.4), radius: 2, x: 0, y: 1)
-    }
-
-    private func colorFor(_ name: String) -> Color {
-        switch name.lowercased() {
-        case "red": return .red
-        case "orange": return .orange
-        case "green": return .green
-        default: return .gray
-        }
-    }
-
-    private func iconFor(_ name: String) -> String {
-        switch name.lowercased() {
-        case "red": return "exclamationmark.triangle.fill"
-        case "orange": return "exclamationmark.triangle"
-        case "green": return "checkmark.shield.fill"
-        default: return "questionmark.circle"
-        }
+        .shadow(color: Color.black.opacity(0.3), radius: 1, x: 0, y: 1)
     }
 }
 

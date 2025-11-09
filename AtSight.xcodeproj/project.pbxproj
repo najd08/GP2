@@ -388,7 +388,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "\"AtSight Watch App/Preview Content\"";
-				DEVELOPMENT_TEAM = 4US8YKWZZ2;
+				DEVELOPMENT_TEAM = WNUSA964J3;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "AtSight-Watch-App-Info.plist";
@@ -399,7 +399,7 @@
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "We use your location to keep your parent informed.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "This app needs microphone access to record and send voice messages.";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
-				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = gp.Finalproject.AtSight;
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = gp.Sprint4.AtSight;
 				INFOPLIST_PREPROCESS = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -407,7 +407,7 @@
 				);
 				MARKETING_VERSION = 1.0;
 				NEW_SETTING = "";
-				PRODUCT_BUNDLE_IDENTIFIER = gp.Finalproject.AtSight.watchkitapp;
+				PRODUCT_BUNDLE_IDENTIFIER = gp.Sprint4.AtSight.watchkitapp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = watchos;
 				SKIP_INSTALL = YES;
@@ -427,7 +427,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "\"AtSight Watch App/Preview Content\"";
-				DEVELOPMENT_TEAM = 4US8YKWZZ2;
+				DEVELOPMENT_TEAM = WNUSA964J3;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "AtSight-Watch-App-Info.plist";
@@ -438,7 +438,7 @@
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "We use your location to keep your parent informed.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "This app needs microphone access to record and send voice messages.";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
-				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = gp.Finalproject.AtSight;
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = gp.Sprint4.AtSight;
 				INFOPLIST_PREPROCESS = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -446,7 +446,7 @@
 				);
 				MARKETING_VERSION = 1.0;
 				NEW_SETTING = "";
-				PRODUCT_BUNDLE_IDENTIFIER = gp.Finalproject.AtSight.watchkitapp;
+				PRODUCT_BUNDLE_IDENTIFIER = gp.Sprint4.AtSight.watchkitapp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = watchos;
 				SKIP_INSTALL = YES;
@@ -467,7 +467,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "\"AtSight/Preview Content\"";
-				DEVELOPMENT_TEAM = 4US8YKWZZ2;
+				DEVELOPMENT_TEAM = WNUSA964J3;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = AtSight/Info.plist;
@@ -475,6 +475,7 @@
 				INFOPLIST_KEY_LSApplicationCategoryType = "";
 				INFOPLIST_KEY_NSCameraUsageDescription = "We use the camera to scan the watch QR code.";
 				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = Always;
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Location is needed to show the user's location on the map.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "This app needs microphone access to record and send voice messages.";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -486,7 +487,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = gp.Finalproject.AtSight;
+				PRODUCT_BUNDLE_IDENTIFIER = gp.Sprint4.AtSight;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SDKROOT = iphoneos;
@@ -505,7 +506,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "\"AtSight/Preview Content\"";
-				DEVELOPMENT_TEAM = 4US8YKWZZ2;
+				DEVELOPMENT_TEAM = WNUSA964J3;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = AtSight/Info.plist;
@@ -513,6 +514,7 @@
 				INFOPLIST_KEY_LSApplicationCategoryType = "";
 				INFOPLIST_KEY_NSCameraUsageDescription = "We use the camera to scan the watch QR code.";
 				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = Always;
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Location is needed to show the user's location on the map.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "This app needs microphone access to record and send voice messages.";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -524,7 +526,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = gp.Finalproject.AtSight;
+				PRODUCT_BUNDLE_IDENTIFIER = gp.Sprint4.AtSight;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SDKROOT = iphoneos;

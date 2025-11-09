@@ -4,6 +4,10 @@
 //
 //  Shows live location + last 3 history entries
 //
+//Edit by Riyam: updated the back button to fit Dark Mode. ✅
+// ⚠️ there is a bug in displaying the locationDetails sheet, the sheet is empty the first time you click on any location item. however, if you click on another sheet, then the issue will be fixed. ⚠️
+// accidantly modified the halt button sheet while trying to fix the bug (it looks nicer like this now so I will not change it lol). ❗️
+//we should include the zones in the map.
 
 import SwiftUI
 import MapKit
@@ -54,11 +58,8 @@ struct ChildLocationView: View {
                         .foregroundColor(Color("BlackFont"))
                         .font(.system(size: 20, weight: .bold))
                         .padding(8)
-                        .background(Color.white)
-                        .clipShape(Circle())
-                }
-                .padding(.leading, -10)
-
+                }.padding(.leading, -10)
+                
                 Spacer()
 
                 Text("\(child.name)'s Live Location")
@@ -152,7 +153,7 @@ struct ChildLocationView: View {
                 // Last 3 locations
                 if !recentLocations.isEmpty {
                     VStack(alignment: .leading, spacing: 15) {
-                        Text("Last 3 Recent Locations:")
+                        Text("Last 3 Locations:")
                             .font(.title3).bold()
                             .padding(.leading)
 
@@ -197,11 +198,6 @@ struct ChildLocationView: View {
             .background(Color("BgColor").edgesIgnoringSafeArea(.all))
             .navigationBarHidden(true)
             .navigationBarBackButtonHidden(true)
-            .sheet(isPresented: $showLocationDetail) {
-                if let coord = selectedLocation, let name = selectedLocationName {
-                    LocationDetailView(coordinate: coord, locationName: name)
-                }
-            }
         }
         .onDisappear {
             latestListener?.remove()
@@ -209,8 +205,14 @@ struct ChildLocationView: View {
             latestDocListener?.remove()
             latestDocListener = nil
         }
+        .sheet(isPresented: $showLocationDetail) {
+            if let coord = selectedLocation, let name = selectedLocationName {
+                LocationDetailView(coordinate: coord, locationName: name)
+            }
+        }
     }
 
+    // ... (All helper functions remain the same) ...
     // MARK: - Live latest location (Firestore listener)
     private func startLatestLocationListener() {
         latestListener?.remove()
@@ -370,17 +372,19 @@ struct HaltButtonView: View {
             }
             .buttonStyle(.plain)
             .padding(.bottom, 2)
-
-            // Optional popup (like SOS confirm sheet)
-            if showHaltPopup {
-                HaltConfirmSheet(
-                    isShowing: $showHaltPopup,
-                    onSend: {
-                        showHaltPopup = false
-                        print("HALT triggered")
-                    }
-                )
-            }
+        }
+        // MARK: FIX: Present the HaltConfirmSheet as a modal .sheet
+        .sheet(isPresented: $showHaltPopup) {
+            HaltConfirmSheet(
+                isShowing: $showHaltPopup, // Pass the binding
+                onSend: {
+                    showHaltPopup = false
+                    print("HALT triggered")
+                }
+            )
+            // MARK: FIX: Make it look like a popup by setting its height
+            .presentationDetents([.height(250)])
+            .presentationCornerRadius(20) // Optional: make it look nicer
         }
     }
 }
@@ -391,33 +395,41 @@ struct HaltConfirmSheet: View {
     var onSend: () -> Void
 
     var body: some View {
-        VStack(spacing: 20) {
-            Text("Confirm HALT?")
-                .font(.headline)
-                .padding(.top, 20)
+        // MARK: FIX: Wrap in a VStack to give it a proper background
+        ZStack {
+            Color("BgColor").ignoresSafeArea() // Use your app's background color
+            
+            VStack(spacing: 20) {
+                Text("Confirm HALT?")
+                    .font(.title2).bold()
+                    .foregroundColor(Color("BlackFont")) // Use your app's font color
+                    .padding(.top, 30)
 
-            Button(action: {
-                onSend()
-            }) {
-                Text("Send HALT")
-                    .font(.headline)
-                    .foregroundColor(.white)
-                    .padding()
-                    .frame(maxWidth: .infinity)
-                    .background(Color.red)
-                    .cornerRadius(12)
-            }
+                Text("This will send an urgent alert about your child.")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal)
 
-            Button("Cancel") {
-                isShowing = false
+                Button(action: {
+                    onSend()
+                }) {
+                    Text("Send HALT")
+                        .font(.headline)
+                        .foregroundColor(.white)
+                        .padding()
+                        .frame(maxWidth: .infinity)
+                        .background(Color.red)
+                        .cornerRadius(12)
+                }
+
+                Button("Cancel") {
+                    isShowing = false
+                }
+                .padding(.bottom, 20)
             }
-            .padding(.bottom, 20)
+            .padding()
         }
-        .frame(maxWidth: 300)
-        .background(Color(.systemBackground))
-        .cornerRadius(16)
-        .shadow(radius: 10)
-        .padding()
     }
 }
 

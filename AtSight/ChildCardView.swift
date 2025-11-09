@@ -1,3 +1,5 @@
+//fixed a bug in the card colors, the pink and blue used to translate to gray color. ✅
+
 import SwiftUI
 
 struct ChildCardView: View {
@@ -9,11 +11,11 @@ struct ChildCardView: View {
         switch colorName {
         case "red": return .red
         case "green": return .green
-        case "Blue": return .blue
+        case "blue": return .blue      //fixed "Blue" to "blue"
         case "yellow": return .yellow
         case "orange": return .orange
         case "purple": return .purple
-        case "Pink": return .pink
+        case "pink": return .pink      //fixed "Pink" to "pink"
         case "brown": return .brown
         case "gray": return .gray
         case "bluecolor": return Color("Blue")
