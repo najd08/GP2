@@ -9,6 +9,13 @@
 // ZoneAlertZimulation file now runs in the background and monitors the location and sends alerts for all children! ✅✅✅
 //merged 🤝
 
+//updated to handle sos alert popup
+//EDIT BY RIYAM: Changed alertManager declaration to use @ObservedObject and .shared singleton instance to resolve 'inaccessible initializer' error.
+// Updated by Leon on 28/10/2025: Added AlertPage overlay for continuous zone monitoring. ❌ commented out.
+//  Updated by User on 2025-11-23: Integrated PairingRequestView for Admin approvals.
+//
+
+
 import SwiftUI
 import FirebaseFirestore
 import FirebaseAuth
@@ -24,6 +31,12 @@ struct MainView: View {
     @State private var homeViewID = UUID()
 
     @EnvironmentObject var appState: AppState
+    
+    // 💥 FIX: Access the global singleton instance using @ObservedObject.
+    @ObservedObject private var alertManager = SOSAlertManager.shared
+    
+    // ✅ NEW: Listener for Pairing Requests (Admin Approval)
+    @StateObject private var pairingListener = PairingRequestListener()
 
     var body: some View {
         ZStack {
@@ -120,12 +133,8 @@ struct MainView: View {
             }
         }
         .ignoresSafeArea(.container, edges: .bottom)
+        
         // ✅ Overlay running silently in the background (from new code)
-//        .overlay(
-//            AlertPage()
-//                .frame(width: 0, height: 0) // hidden but active
-//                .opacity(0)
-//        )
         .overlay(
                     Group {
                         // MARK: Loop over all children, not just 'selectedChild'
@@ -136,9 +145,46 @@ struct MainView: View {
                         }
                     }
                 )
-
+        //MARK: SOS Alert View as a global overlay
+        .overlay(
+            ZStack {
+                if alertManager.isShowingAlert, let alert = alertManager.currentAlert {
+                    SOSAlertView(
+                        isShowing: $alertManager.isShowingAlert,
+                        alert: alert
+                    )
+                }
+            }
+            .animation(.easeInOut, value: alertManager.isShowingAlert)
+        )
+        
+        // ✅ NEW: Pairing Request Pop-up Sheet
+        // This triggers automatically when pairingListener.activeRequest is set
+        .sheet(item: $pairingListener.activeRequest) { request in
+            if let uid = Auth.auth().currentUser?.uid {
+                PairingRequestView(request: request, guardianId: uid)
+            } else {
+                Text("Error: User not logged in")
+            }
+        }
+        
         .onAppear {
             fetchChildren()
+            
+            // Start the SOS listener when MainView appears
+            alertManager.startListeningForSOS()
+            
+            // ✅ NEW: Start listening for Pairing Requests
+            if let uid = Auth.auth().currentUser?.uid {
+                pairingListener.startListening(guardianId: uid)
+            }
+        }
+        .onDisappear {
+            // Stop the listener when the user logs out
+            alertManager.stopListening()
+            
+            // ✅ NEW: Stop pairing listener
+            pairingListener.stopListening()
         }
         .preferredColorScheme(isDarkMode ? .dark : .light) // ✅ إضافة تحكم الدارك مود هنا
     }

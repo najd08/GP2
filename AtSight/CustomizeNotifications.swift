@@ -1,6 +1,4 @@
-//TO DO:
-// Add option for notifications to be frequent or less frequent or urgent only.
-
+//Modified some texts an changed newAuthorAccount to newConnectionRequest.
 
 import SwiftUI
 import Firebase
@@ -18,7 +16,7 @@ struct CustomizeNotifications: View {
     @State private var unsafeZoneAlert: Bool = true
     @State private var lowBatteryAlert: Bool = true
     @State private var watchRemovedAlert: Bool = true
-    @State private var newAuthorAccount: Bool = true
+    @State private var newConnectionRequest: Bool = true
 
     @State private var showSoundPicker = false
     @State private var selectedSound: NotificationSound = .defaultSound
@@ -49,14 +47,14 @@ struct CustomizeNotifications: View {
                                  subtitle: "Alert if child enters an unsafe zone",
                                  isOn: $unsafeZoneAlert) { child.notificationSettings.unsafeZoneAlert = $0 }
 
-                notificationCard(title: "Battery Low",
+                notificationCard(title: "Low Battery Alert",
                                  subtitle: "Alert if child's watch is low on battery",
                                  isOn: $lowBatteryAlert) { child.notificationSettings.lowBatteryAlert = $0 }
 
                 // MARK: - Battery Threshold Slider (from merged file)
                 notificationCard(
-                    title: "Battery Low Threshold",
-                    subtitle: "Set percentage for alerts",
+                    title: "Low Battery Threshold",
+                    subtitle: "Set percentage for Low Battery alerts",
                     rightView: AnyView(
                         VStack {
                             Slider(
@@ -83,9 +81,9 @@ struct CustomizeNotifications: View {
                                  subtitle: "Alert if child removed the watch",
                                  isOn: $watchRemovedAlert) { child.notificationSettings.watchRemovedAlert = $0 }
 
-                notificationCard(title: "New Author Account",
-                                 subtitle: "Alert if child profile has been accessed",
-                                 isOn: $newAuthorAccount) { child.notificationSettings.newAuthorAccount = $0 }
+                notificationCard(title: "New Conncetion Request",
+                                 subtitle: "Alert when someone tries to connect to child watch",
+                                 isOn: $newConnectionRequest) { child.notificationSettings.newConnectionRequest = $0 }
 
                 notificationCard(title: "Notification Sound",
                                  subtitle: "Choose sound for all notifications",
@@ -164,7 +162,7 @@ struct CustomizeNotifications: View {
             unsafeZoneAlert = data["unsafeZoneAlert"] as? Bool ?? true
             lowBatteryAlert = data["lowBatteryAlert"] as? Bool ?? true
             watchRemovedAlert = data["watchRemovedAlert"] as? Bool ?? true
-            newAuthorAccount = data["newAuthorAccount"] as? Bool ?? true
+            newConnectionRequest = data["newConnectionRequest"] as? Bool ?? true
             if let sound = data["sound"] as? String {
                 selectedSound = NotificationSound.fromString(sound)
             }
@@ -195,7 +193,7 @@ struct CustomizeNotifications: View {
             "unsafeZoneAlert": unsafeZoneAlert,
             "lowBatteryAlert": lowBatteryAlert,
             "watchRemovedAlert": watchRemovedAlert,
-            "newAuthorAccount": newAuthorAccount,
+            "newConnectionRequest": newConnectionRequest,
             "sound": selectedSound.filename,
             "lowBatteryThreshold": selectedThreshold // Added from merged file
         ]
@@ -206,7 +204,7 @@ struct CustomizeNotifications: View {
             unsafeZoneAlert: unsafeZoneAlert,
             lowBatteryAlert: lowBatteryAlert,
             watchRemovedAlert: watchRemovedAlert,
-            newAuthorAccount: newAuthorAccount,
+            newConnectionRequest: newConnectionRequest,
             sound: selectedSound.filename,
             lowBatteryThreshold: selectedThreshold
         )

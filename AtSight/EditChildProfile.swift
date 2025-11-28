@@ -216,7 +216,7 @@ struct EditChildProfile: View {
     // MARK: - Navigation Links
     var navigationLinksSection: some View {
         VStack(spacing: 10) {
-            navigationBox(title: "Authorized People", systemImage: "person.2.fill", destination: AuthorizedPeople(child: $child))
+            navigationBox(title: "Authorized Guardians", systemImage: "person.2.fill", destination: AuthorizedGuardians(child: $child))
             navigationBox(title: "Customize Notifications", systemImage: "bell.badge", destination: CustomizeNotifications(child: $child))
         }
         .padding(.top)

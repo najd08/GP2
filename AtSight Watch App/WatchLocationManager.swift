@@ -4,6 +4,11 @@
 //
 //  Created by Leena on 07/09/2025.
 //  Updated on 22/10/2025: sends streetName + zoneName with coordinate array
+//  EDIT BY RIYAM:
+//  - Updated sendLocationToAPI to iterate through PairingState.shared.linkedGuardianIDs.
+//  - Sends Location to ALL linked guardians.
+//  - Added specific handling for kCLErrorDomain error 0 (Location Unknown) to retry gracefully.
+//  - FIXED MainActor isolation error by wrapping PairingState access in Task { @MainActor }.
 //
 
 import Foundation
@@ -98,29 +103,50 @@ final class WatchLocationManager: NSObject, CLLocationManagerDelegate {
     
     // MARK: - Send location via API
     private func sendLocationToAPI(_ loc: CLLocation) {
-        let childId = UserDefaults.standard.string(forKey: "currentChildId") ?? "unknown"
-        let guardianId = UserDefaults.standard.string(forKey: "guardianId") ?? "unknown"
-        
-        // 🔹 نجيب اسم الشارع باستخدام CLGeocoder
-        geocoder.reverseGeocodeLocation(loc) { placemarks, error in
-            var streetName = "Unknown"
-            if let placemark = placemarks?.first {
-                streetName = placemark.thoroughfare ?? placemark.name ?? "Unknown"
+        // EDIT BY RIYAM: Task { @MainActor } fixes the concurrency error
+        Task { @MainActor in
+            // EDIT BY RIYAM: Get all linked guardians
+            let guardians = PairingState.shared.linkedGuardianIDs
+            
+            if guardians.isEmpty {
+                print("⚠️ [WLM] No linked guardians found. Cannot send location.")
+                return
             }
             
-            // ✅ نفس التنسيق المطلوب
-            let payload: [String: Any] = [
-                "guardianId": guardianId,
-                "childId": childId,
-                "coordinate": [loc.coordinate.latitude, loc.coordinate.longitude],
-                "isSafeZone": true,
-                "timestamp": loc.timestamp.timeIntervalSince1970,
-                "zoneName": "Initial",
-                "streetName": streetName
-            ]
-            
-            APIHelper.shared.post(to: API.uploadLocation, body: payload)
-            print("📤 [WLM] Sent live location via API:", payload)
+            // 🔹 نجيب اسم الشارع باستخدام CLGeocoder
+            self.geocoder.reverseGeocodeLocation(loc) { placemarks, error in
+                var streetName = "Unknown"
+                if let placemark = placemarks?.first {
+                    streetName = placemark.thoroughfare ?? placemark.name ?? "Unknown"
+                }
+                
+                // EDIT BY RIYAM: Loop through all guardians
+                // NOTE: We are inside the geocoder closure, but we captured 'guardians' from the MainActor block above.
+                // However, to be safe when accessing PairingState again (for childID), we should be careful.
+                // Since we need guardianChildIDs map, we should grab it upfront or inside another MainActor task.
+                
+                // Safe approach: Grab IDs before the closure or re-enter MainActor
+                Task { @MainActor in
+                    let childMap = PairingState.shared.guardianChildIDs
+                    
+                    for guardianId in guardians {
+                        let childId = childMap[guardianId] ?? "unknown"
+                        
+                        let payload: [String: Any] = [
+                            "guardianId": guardianId,
+                            "childId": childId,
+                            "coordinate": [loc.coordinate.latitude, loc.coordinate.longitude],
+                            "isSafeZone": true,
+                            "timestamp": loc.timestamp.timeIntervalSince1970,
+                            "zoneName": "Initial",
+                            "streetName": streetName
+                        ]
+                        
+                        APIHelper.shared.post(to: API.uploadLocation, body: payload)
+                        print("📤 [WLM] Sent live location to guardian \(guardianId):", payload)
+                    }
+                }
+            }
         }
     }
 
@@ -155,7 +181,14 @@ final class WatchLocationManager: NSObject, CLLocationManagerDelegate {
     
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
         let nsErr = error as NSError
-        print("❌ [WLM] location error:", nsErr.localizedDescription, "(code=\(nsErr.code))")
-        scheduleRetry("error code \(nsErr.code)")
+        
+        // EDIT BY RIYAM: Specific handling for kCLErrorDomain error 0
+        if nsErr.domain == kCLErrorDomain && nsErr.code == 0 {
+            print("⚠️ [WLM] Location Unknown (temporary error). Retrying...")
+            scheduleRetry("Location Unknown (Error 0)")
+        } else {
+            print("❌ [WLM] location error:", nsErr.localizedDescription, "(code=\(nsErr.code))")
+            scheduleRetry("error code \(nsErr.code)")
+        }
     }
 }

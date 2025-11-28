@@ -1,13 +1,10 @@
+//  MARK: This Page Shows the curent child's last 3 location history entries
 //
-//  ChildLocationView.swift
-//  AtSight
-//
-//  Shows live location + last 3 history entries
-//
-//Edit by Riyam: updated the back button to fit Dark Mode. ✅
+//Edits by Riyam:
 // ⚠️ there is a bug in displaying the locationDetails sheet, the sheet is empty the first time you click on any location item. however, if you click on another sheet, then the issue will be fixed. ⚠️
-// accidantly modified the halt button sheet while trying to fix the bug (it looks nicer like this now so I will not change it lol). ❗️
-//we should include the zones in the map.
+//changed the title from "\(child.name)'s Live Location" to "Last Location". ✅
+//modified time format. ✅
+//added zones to the map view. ✅
 
 import SwiftUI
 import MapKit
@@ -15,10 +12,16 @@ import FirebaseFirestore
 import FirebaseAuth
 import UIKit
 
-struct LocationPin: Identifiable {
-    var id = UUID()
-    var coordinate: CLLocationCoordinate2D
-    var imageName: String?
+// ✅ 1. Create a Unified Model to hold either a Child Pin or a Zone
+struct MapAnnotationItem: Identifiable {
+    let id = UUID()
+    let coordinate: CLLocationCoordinate2D
+    let type: AnnotationType
+    
+    enum AnnotationType {
+        case child(String?) // Holds imageName
+        case zone(Zone)     // Holds the Zone object
+    }
 }
 
 struct ChildLocationView: View {
@@ -30,11 +33,15 @@ struct ChildLocationView: View {
     )
     @State private var isMapExpanded = false
     @Environment(\.presentationMode) var presentationMode
+    
     @State private var latestCoordinate: CLLocationCoordinate2D? = nil
     @State private var recentLocations: [[String: Any]] = []
     @State private var selectedLocation: CLLocationCoordinate2D? = nil
     @State private var selectedLocationName: String? = nil
     @State private var showLocationDetail = false
+    
+    // ✅ 2. State to hold fetched zones
+    @State private var zones: [Zone] = []
 
     // 🔁 Firestore listener tokens
     @State private var latestListener: ListenerRegistration?
@@ -47,6 +54,28 @@ struct ChildLocationView: View {
     private func zoomOut() {
         region.span.latitudeDelta *= 2
         region.span.longitudeDelta *= 2
+    }
+    
+    // ✅ 3. Computed Property to combine Child Location + Zones
+    private var mapAnnotations: [MapAnnotationItem] {
+        var items: [MapAnnotationItem] = []
+        
+        // Add Zones first (so they appear behind the child if overlapping)
+        for zone in zones {
+            items.append(MapAnnotationItem(coordinate: zone.coordinate, type: .zone(zone)))
+        }
+        
+        // Add Child Location
+        if let latestCoordinate = latestCoordinate {
+            items.append(MapAnnotationItem(coordinate: latestCoordinate, type: .child(child.imageName)))
+        }
+        
+        return items
+    }
+    
+    // ✅ Helper to get current map height
+    private var currentMapHeight: CGFloat {
+        isMapExpanded ? 600 : 350
     }
 
     var body: some View {
@@ -62,7 +91,7 @@ struct ChildLocationView: View {
                 
                 Spacer()
 
-                Text("\(child.name)'s Live Location")
+                Text("\(child.name)'s Last Location")
                     .font(.title).bold()
                     .foregroundColor(Color("Blue"))
                     .frame(maxWidth: .infinity, alignment: .center)
@@ -76,41 +105,55 @@ struct ChildLocationView: View {
             Divider().padding(.horizontal)
 
             ScrollView {
-                // Map with pin
+                // Map with pin AND Zones
                 ZStack {
-                    if let latestCoordinate = latestCoordinate {
+                    if latestCoordinate != nil { // Check if we have location data
                         Map(
                             coordinateRegion: $region,
-                            annotationItems: [LocationPin(coordinate: latestCoordinate, imageName: child.imageName)]
-                        ) { pin in
-                            MapAnnotation(coordinate: pin.coordinate) {
-                                if hasAsset(named: pin.imageName) {
-                                    ZStack {
-                                        Circle()
-                                            .fill(Color.green.opacity(0.4))
-                                            .frame(width: 42, height: 42)
-                                        Image(pin.imageName!)
-                                            .resizable()
-                                            .scaledToFit()
-                                            .frame(width: 37, height: 37)
-                                            .clipShape(Circle())
+                            annotationItems: mapAnnotations // ✅ Use combined items
+                        ) { item in
+                            MapAnnotation(coordinate: item.coordinate) {
+                                switch item.type {
+                                case .child(let imageName):
+                                    // --- RENDER CHILD PIN ---
+                                    if hasAsset(named: imageName) {
+                                        ZStack {
+                                            Circle()
+                                                .fill(Color.blue.opacity(0.5))
+                                                .frame(width: 42, height: 42)
+                                            Image(imageName!)
+                                                .resizable()
+                                                .scaledToFit()
+                                                .frame(width: 37, height: 37)
+                                                .clipShape(Circle())
+                                        }
+                                    } else {
+                                        ZStack {
+                                            Circle()
+                                                .fill(Color.green.opacity(0.4))
+                                                .frame(width: 42, height: 42)
+                                                .shadow(radius: 3)
+                                            Image(systemName: "mappin")
+                                                .resizable()
+                                                .scaledToFit()
+                                                .foregroundColor(Color("CustomBlue"))
+                                                .frame(width: 30, height: 30)
+                                        }
                                     }
-                                } else {
-                                    ZStack {
-                                        Circle()
-                                            .fill(Color.white)
-                                            .frame(width: 42, height: 42)
-                                            .shadow(radius: 3)
-                                        Image(systemName: "mappin")
-                                            .resizable()
-                                            .scaledToFit()
-                                            .foregroundColor(Color("CustomBlue"))
-                                            .frame(width: 30, height: 30)
-                                    }
+                                    
+                                case .zone(let zone):
+                                    // --- RENDER ZONE ---
+                                    // Reuse ZoneAnnotationView (assumed available globally)
+                                    // ✅ Pass currentMapHeight to calculate correct size relative to view
+                                    ZoneAnnotationView(zone: zone, isTemp: false)
+                                        .frame(
+                                            width: calculateZoneFrame(zoneSize: zone.zoneSize, mapHeight: currentMapHeight),
+                                            height: calculateZoneFrame(zoneSize: zone.zoneSize, mapHeight: currentMapHeight)
+                                        )
                                 }
                             }
                         }
-                        .frame(height: isMapExpanded ? 600 : 350)
+                        .frame(height: currentMapHeight) // ✅ Use consistent height variable
                         .cornerRadius(30)
                         .padding(.horizontal)
                         .animation(.spring(), value: isMapExpanded)
@@ -124,6 +167,7 @@ struct ChildLocationView: View {
                 .onAppear {
                     startLatestLocationListener()
                     fetchRecentLocationHistory()
+                    fetchZones() // ✅ Fetch zones on load
                 }
 
                 // Zoom buttons
@@ -132,7 +176,7 @@ struct ChildLocationView: View {
                         Image(systemName: "minus.magnifyingglass")
                             .font(.title2)
                             .padding(10)
-                            .background(Color.white)
+                            .background(Color("TextFieldBg"))
                             .clipShape(Circle())
                             .shadow(radius: 2)
                     }
@@ -140,7 +184,7 @@ struct ChildLocationView: View {
                         Image(systemName: "plus.magnifyingglass")
                             .font(.title2)
                             .padding(10)
-                            .background(Color.white)
+                            .background(Color("TextFieldBg"))
                             .clipShape(Circle())
                             .shadow(radius: 2)
                     }
@@ -148,7 +192,7 @@ struct ChildLocationView: View {
                 .padding(.top, -20)
 
                 // HALT button
-                HaltButtonView()
+                HaltButtonView(child: child)
 
                 // Last 3 locations
                 if !recentLocations.isEmpty {
@@ -211,9 +255,60 @@ struct ChildLocationView: View {
             }
         }
     }
+    
+    // MARK: - ✅ Zone Fetching Functions
+    func fetchZones() {
+        guard let guardianID = Auth.auth().currentUser?.uid else { return }
+        let db = Firestore.firestore()
+        let childRef = db.collection("guardians").document(guardianID).collection("children").document(child.id)
+        
+        let group = DispatchGroup()
+        var fetchedZones: [Zone] = []
+        
+        for collection in ["safeZone", "unSafeZone"] {
+            group.enter()
+            childRef.collection(collection).getDocuments { snapshot, error in
+                if let documents = snapshot?.documents {
+                    for doc in documents {
+                        let data = doc.data()
+                        if let geo = data["coordinate"] as? GeoPoint,
+                           let name = data["zoneName"] as? String,
+                           let isSafe = data["isSafeZone"] as? Bool,
+                           let size = data["zoneSize"] as? Double {
+                            let zone = Zone(
+                                coordinate: CLLocationCoordinate2D(latitude: geo.latitude, longitude: geo.longitude),
+                                zoneName: name,
+                                isSafeZone: isSafe,
+                                zoneSize: size
+                            )
+                            fetchedZones.append(zone)
+                        }
+                    }
+                }
+                group.leave()
+            }
+        }
+        
+        group.notify(queue: .main) {
+            self.zones = fetchedZones
+        }
+    }
+    
+    // ✅ Calculate circle size adjusted for the current map frame height
+    private func calculateZoneFrame(zoneSize: Double, mapHeight: CGFloat) -> CGFloat {
+        let metersPerPoint = region.span.latitudeDelta * 111000
+        guard metersPerPoint > 0 else { return 0 }
+        
+        // Original constant (5000) was tuned for a full screen map (~850pts)
+        // We scale it based on the current map height to maintain visual proportion
+        let referenceScreenHeight: CGFloat = UIScreen.main.bounds.height
+        let adjustedConstant = 5000 * (mapHeight / referenceScreenHeight)
+        
+        let zoomFactor = CGFloat(metersPerPoint)
+        return CGFloat(zoneSize * 2) / zoomFactor * adjustedConstant
+    }
 
-    // ... (All helper functions remain the same) ...
-    // MARK: - Live latest location (Firestore listener)
+    // MARK: - Latest location (Firestore listener)
     private func startLatestLocationListener() {
         latestListener?.remove()
         latestDocListener?.remove()
@@ -319,7 +414,8 @@ struct ChildLocationView: View {
         if let ts = timestamp as? Timestamp {
             let date = ts.dateValue()
             let formatter = DateFormatter()
-            formatter.dateFormat = "dd MMM yyyy, HH:mm"
+            // ✅ 12-hour format with AM/PM
+            formatter.dateFormat = "dd MMM yyyy, h:mm a"
             return formatter.string(from: date)
         }
         return "Unknown Time"
@@ -340,7 +436,11 @@ struct ChildLocationView: View {
 
 // MARK: - Halt button
 struct HaltButtonView: View {
+    var child: Child
     @State private var showHaltPopup = false
+    @State private var isSendingHalt = false
+    @State private var haltAlertMessage: String?
+    @State private var haltAlertTitle: String = ""
 
     var body: some View {
         VStack {
@@ -373,36 +473,47 @@ struct HaltButtonView: View {
             .buttonStyle(.plain)
             .padding(.bottom, 2)
         }
-        // MARK: FIX: Present the HaltConfirmSheet as a modal .sheet
         .sheet(isPresented: $showHaltPopup) {
             HaltConfirmSheet(
-                isShowing: $showHaltPopup, // Pass the binding
+                isShowing: $showHaltPopup,
+                isSending: $isSendingHalt,
                 onSend: {
-                    showHaltPopup = false
-                    print("HALT triggered")
+                    isSendingHalt = true
+                    HaltManager.shared.sendHaltSignal(childId: child.id, childName: child.name) { success, message in
+                        isSendingHalt = false
+                        showHaltPopup = false
+                        haltAlertTitle = success ? "HALT Signal Sent" : "Error"
+                        haltAlertMessage = message
+                    }
                 }
             )
-            // MARK: FIX: Make it look like a popup by setting its height
             .presentationDetents([.height(250)])
-            .presentationCornerRadius(20) // Optional: make it look nicer
+            .presentationCornerRadius(20)
         }
+        .alert(haltAlertTitle, isPresented: .constant(haltAlertMessage != nil), actions: {
+            Button("OK") {
+                haltAlertMessage = nil
+            }
+        }, message: {
+            Text(haltAlertMessage ?? "")
+        })
     }
 }
 
-// MARK: - Confirm Sheet (like your SOSConfirmSheet)
+// MARK: - Confirm Sheet
 struct HaltConfirmSheet: View {
     @Binding var isShowing: Bool
+    @Binding var isSending: Bool
     var onSend: () -> Void
 
     var body: some View {
-        // MARK: FIX: Wrap in a VStack to give it a proper background
         ZStack {
-            Color("BgColor").ignoresSafeArea() // Use your app's background color
+            Color("BgColor").ignoresSafeArea()
             
             VStack(spacing: 20) {
                 Text("Confirm HALT?")
                     .font(.title2).bold()
-                    .foregroundColor(Color("BlackFont")) // Use your app's font color
+                    .foregroundColor(Color("BlackFont"))
                     .padding(.top, 30)
 
                 Text("This will send an urgent alert about your child.")
@@ -412,27 +523,40 @@ struct HaltConfirmSheet: View {
                     .padding(.horizontal)
 
                 Button(action: {
-                    onSend()
+                    if !isSending {
+                        onSend()
+                    }
                 }) {
-                    Text("Send HALT")
-                        .font(.headline)
-                        .foregroundColor(.white)
-                        .padding()
-                        .frame(maxWidth: .infinity)
-                        .background(Color.red)
-                        .cornerRadius(12)
+                    ZStack {
+                        if isSending {
+                            ProgressView()
+                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                        } else {
+                            Text("Send HALT")
+                                .font(.headline)
+                                .fontWeight(.bold)
+                                .foregroundColor(.white)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color.red)
+                    .cornerRadius(12)
                 }
+                .disabled(isSending)
 
                 Button("Cancel") {
-                    isShowing = false
+                    if !isSending {
+                        isShowing = false
+                    }
                 }
                 .padding(.bottom, 20)
+                .disabled(isSending)
             }
             .padding()
         }
     }
 }
-
 
 // MARK: - Timeline item
 struct TimelineItem: View {

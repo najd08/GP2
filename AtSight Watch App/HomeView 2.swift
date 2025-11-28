@@ -6,6 +6,11 @@
 //  ✅ Prevents repeated playback across Home + Chat using shared UserDefaults
 //
 
+// EDIT BY RIYAM: Removed Header Image.
+// EDIT BY RIYAM: Expanded Guardian List to fill screen space.
+// EDIT BY RIYAM: Fixed Halt Alert to play immediately and stop audio after 15s.
+// EDIT BY RIYAM: Kept Multi-Guardian SOS/HALT logic.
+
 import SwiftUI
 import WatchConnectivity
 import AVFoundation
@@ -13,8 +18,16 @@ import WatchKit
 
 struct HomeView_Watch: View {
     @StateObject private var pairing = PairingState.shared
+    // ✅ Use the shared HaltReceiver instead of local state
+    @StateObject private var haltManager = HaltReceiver.shared
+    
     @State private var showSOSPopup = false
+    @State private var selectedGuardianId: String?
     @State private var navigateToChat = false
+    
+    // Timers for background logic
+    @State private var unlinkTimer: Timer?
+    // ❌ REMOVED: haltTimer (HaltReceiver handles this now)
 
     // MARK: - Style
     private let bgTop     = Color(red: 0.965, green: 0.975, blue: 1.00)
@@ -26,38 +39,78 @@ struct HomeView_Watch: View {
     private let stroke    = Color.black.opacity(0.12)
 
     // MARK: - Helpers
-    private func startServicesIfPossible(context: String) {
-        let childId = UserDefaults.standard.string(forKey: "currentChildId") ?? ""
-        guard pairing.linked, !childId.isEmpty else {
-            print("⚠️ [Home] skip start (\(context)) linked=\(pairing.linked) childId=\(childId.isEmpty ? "nil" : childId)")
-            return
+    private func startServices() {
+        if let firstGuardianId = pairing.linkedGuardianIDs.first,
+           let firstChildId = pairing.guardianChildIDs[firstGuardianId] {
+            UserDefaults.standard.set(firstGuardianId, forKey: "guardianId")
+            UserDefaults.standard.set(firstChildId, forKey: "currentChildId")
         }
-
-        if WCSession.isSupported(), WCSession.default.activationState == .notActivated {
-            WatchConnectivityManager.shared.activate()
-        }
-
-        let childName = pairing.childName.isEmpty
-            ? (UserDefaults.standard.string(forKey: "childDisplayName") ?? "Child")
-            : pairing.childName
-
+        
+        let childName = pairing.childName.isEmpty ? "Child" : pairing.childName
+        
         BatteryMonitor.shared.startMonitoring(for: childName)
         WatchLocationManager.shared.startLiveUpdates()
         HeartRateMonitor.shared.startMonitoring(for: childName)
-
-        // ✅ Start background voice listener
         VoiceChatBackground.shared.startListening()
-
-        print("✅ [Home] services started (\(context)) for childId=\(childId) name=\(childName)")
+        
+        startUnlinkCheck()
+        
+        // ✅ Start the centralized Halt Listener
+        haltManager.startListening()
+        
+        print("✅ [Home] services started")
     }
-
-    private func stopServices(context: String) {
+    
+    private func stopServices() {
+        unlinkTimer?.invalidate()
+        unlinkTimer = nil
+        
         WatchLocationManager.shared.stopLiveUpdates()
         HeartRateMonitor.shared.stopMonitoring()
         VoiceChatBackground.shared.stopListening()
-        print("🛑 [Home] services stopped (\(context))")
+        
+        // ✅ Stop Halt Listener
+        haltManager.stopListening()
+        
+        print("🛑 [Home] services stopped")
     }
+    
+    // MARK: - Unlink Checker
+    private func startUnlinkCheck() {
+        unlinkTimer?.invalidate()
+        unlinkTimer = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: true) { _ in
+            checkForUnlink()
+        }
+    }
+    
+    private func checkForUnlink() {
+        // ... (Keep existing unlink logic) ...
+        for guardianId in pairing.linkedGuardianIDs {
+            guard let childId = pairing.guardianChildIDs[guardianId], !childId.isEmpty else { continue }
+            
+            let urlString = "\(API.checkLinkStatus)?guardianId=\(guardianId)&childId=\(childId)"
+            guard let url = URL(string: urlString) else { continue }
+            
+            var request = URLRequest(url: url)
+            request.httpMethod = "GET"
+            
+            URLSession.shared.dataTask(with: request) { data, response, error in
+                if let httpResponse = response as? HTTPURLResponse {
+                    if httpResponse.statusCode == 404 {
+                        print("🚫 Unlink detected for guardian: \(guardianId)")
+                        DispatchQueue.main.async {
+                            pairing.removeGuardian(guardianId)
+                        }
+                    }
+                }
+            }.resume()
+        }
+    }
+    
+    // ❌ REMOVED: startHaltCheck() and checkForHaltSignal()
+    // The logic inside HaltReceiver.swift handles this more accurately now.
 
+    // MARK: - Body
     var body: some View {
         NavigationStack {
             ZStack {
@@ -66,48 +119,71 @@ struct HomeView_Watch: View {
                                endPoint: .bottomTrailing)
                     .ignoresSafeArea()
 
-                VStack(spacing: 16) {
+                VStack(spacing: 0) {
                     // MARK: Header
                     HStack(spacing: 10) {
                         Text(pairing.childName.isEmpty ? "AtSight" : pairing.childName)
                             .font(.system(size: 16, weight: .semibold))
                             .foregroundColor(brandBlue)
                             .lineLimit(1)
-                            .minimumScaleFactor(0.85)
 
-                        Spacer(minLength: 8)
-
-                        Image("Image")
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: 34, height: 34)
-                            .padding(6)
-                            .background(Circle().fill(buttons.opacity(0.20)))
-                            .overlay(Circle().stroke(buttons.opacity(0.35), lineWidth: 1))
-                            .shadow(color: buttons.opacity(0.20), radius: 2, x: 0, y: 1)
+                        Spacer()
+                        
+                        NavigationLink(destination: PairingView()) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "person.badge.plus")
+                                    .font(.system(size: 14))
+                                Text("  Link  ")
+                                    .font(.system(size: 12, weight: .medium))
+                            }
+                            .foregroundColor(brandBlue)
+                            .padding(.vertical, 4)
+                            .padding(.horizontal, 8)
+                            .background(Capsule().fill(buttons.opacity(0.2)))
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.top, 6)
-
-                    ContactRow_Watch(
-                        name: pairing.parentName.isEmpty ? "Parent" : pairing.parentName
-                    ) {
-                        navigateToChat = true
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 8)
+        
+                    // MARK: Guardian List
+                    ScrollView {
+                        VStack(spacing: 0) {
+                            if pairing.linkedGuardianIDs.isEmpty {
+                                Text("No guardians connected.")
+                                    .font(.caption)
+                                    .foregroundColor(.gray)
+                                    .padding(.top, 20)
+                            } else {
+                                ForEach(pairing.linkedGuardianIDs, id: \.self) { guardianId in
+                                    let name = pairing.guardianNames[guardianId] ?? "Guardian"
+                                    
+                                    ContactRow_Watch(name: name) {
+                                        selectedGuardianId = guardianId
+                                        navigateToChat = true
+                                    }
+                                }
+                            }
+                        }
+                        .padding(.horizontal)
+                        .padding(.bottom, 10)
                     }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                    Spacer(minLength: 2)
-
+                    Spacer(minLength: 0)
+                    
+                    // MARK: SOS Button
                     Button(action: { startSOSPopup() }) {
                         HStack(spacing: 8) {
                             Image(systemName: "exclamationmark.triangle.fill")
                                 .font(.system(size: 13, weight: .bold))
                                 .foregroundColor(whiteText)
-                            Text("SOS button")
+                            Text("SOS")
                                 .font(.system(size: 15, weight: .bold))
                                 .foregroundColor(whiteText)
                         }
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 10)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
                         .background(
                             Capsule().fill(
                                 LinearGradient(
@@ -120,54 +196,78 @@ struct HomeView_Watch: View {
                                 )
                             )
                         )
-                        .overlay(Capsule().stroke(Color.white.opacity(0.18), lineWidth: 1))
-                        .shadow(color: Color.red.opacity(0.28), radius: 5, x: 0, y: 2)
+                        .shadow(color: Color.red.opacity(0.3), radius: 5, x: 0, y: 3)
                     }
                     .buttonStyle(.plain)
-                    .padding(.bottom, 2)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, -10)
                 }
 
+                // Overlays
                 if showSOSPopup {
                     SOSConfirmSheet(isShowing: $showSOSPopup) {
                         showSOSPopup = false
                         print("🚨 SOS Sent")
+                        
+                        for guardianId in pairing.linkedGuardianIDs {
+                            if let childId = pairing.guardianChildIDs[guardianId], !childId.isEmpty {
+                                let payload: [String: Any] = [
+                                    "guardianId": guardianId,
+                                    "childId": childId,
+                                    "childName": pairing.childName,
+                                    "ts": Date().timeIntervalSince1970
+                                ]
+                                APIHelper.shared.post(to: API.triggerSOS, body: payload)
+                            }
+                        }
+                    }
+                }
+                
+                // ✅ Updated HALT Overlay using the HaltReceiver ObservableObject
+                if haltManager.isHaltActive {
+                    HaltAlertView(message: "HALT SIGNAL RECEIVED") {
+                        // Only allow dismiss if the timer allows it
+                        if haltManager.canDismiss {
+                            haltManager.dismissHalt()
+                        }
                     }
                 }
 
-                NavigationLink(destination: VoiceChatView(), isActive: $navigateToChat) {
+                NavigationLink(destination: chatDestination, isActive: $navigateToChat) {
                     EmptyView()
                 }
                 .hidden()
             }
             .navigationBarBackButtonHidden(true)
-            .onAppear { startServicesIfPossible(context: "onAppear") }
-            .onDisappear {
-                if !navigateToChat {
-                    stopServices(context: "onDisappear")
-                } else {
-                    print("🟢 [Home] keeping live services active (VoiceChatView opened)")
-                }
-            }
-            .onChange(of: pairing.linked) { newValue in
-                if newValue {
-                    startServicesIfPossible(context: "onChange(linked=true)")
-                } else {
-                    stopServices(context: "onChange(linked=false)")
-                }
-            }
+            .onAppear { startServices() }
+            .onDisappear { stopServices() }
         }
     }
 
     private func startSOSPopup() { showSOSPopup = true }
-    private func cancelSOS() { showSOSPopup = false }
+    
+    @ViewBuilder
+    private var chatDestination: some View {
+        if let gid = selectedGuardianId,
+           let childId = pairing.guardianChildIDs[gid] {
+            VoiceChatView(
+                guardianId: gid,
+                childId: childId,
+                childName: pairing.childName,
+                parentName: pairing.guardianNames[gid] ?? "Parent"
+            )
+        } else {
+            EmptyView()
+        }
+    }
 }
 
+// ... (Rest of the subviews like ContactRow_Watch, SOSConfirmSheet remain the same)
 // MARK: - Contact Row
 struct ContactRow_Watch: View {
     var name: String
     var onChatTapped: () -> Void
     private let buttons = Color("Buttons")
-    private let textMain = Color.black
     private let stroke = Color.black.opacity(0.10)
 
     var body: some View {
@@ -176,102 +276,134 @@ struct ContactRow_Watch: View {
                 ZStack {
                     Circle()
                         .fill(buttons.opacity(0.20))
-                        .frame(width: 28, height: 28)
+                        .frame(width: 30, height: 30)
                     Image(systemName: "mic.fill")
                         .foregroundColor(.white)
-                        .font(.system(size: 13, weight: .medium))
+                        .font(.system(size: 14, weight: .medium))
                         .padding(6)
                         .background(Circle().fill(buttons))
-                        .shadow(color: buttons.opacity(0.25), radius: 3, x: 0, y: 1)
                 }
 
                 Text(name)
                     .font(.system(size: 15, weight: .semibold))
-                    .foregroundColor(textMain)
+                    .foregroundColor(.black)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.85)
 
-                Spacer(minLength: 8)
+                Spacer()
+                
                 Image(systemName: "chevron.right")
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(Color.black.opacity(0.55))
+                    .foregroundColor(Color.black.opacity(0.5))
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
-            .background(
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(Color.white)
-                    .shadow(color: Color.black.opacity(0.08), radius: 4, x: 0, y: 2)
-            )
+            .background(Color.white)
+            .cornerRadius(16)
+            .shadow(color: Color.black.opacity(0.05), radius: 3, x: 0, y: 1)
             .overlay(
                 RoundedRectangle(cornerRadius: 16)
                     .stroke(stroke, lineWidth: 1)
             )
         }
         .buttonStyle(.plain)
-        .padding(.horizontal, 16)
     }
 }
 
-// MARK: - SOS Confirm Sheet
+// MARK: - SOS Confirm Sheet (Original)
 struct SOSConfirmSheet: View {
     @Binding var isShowing: Bool
     var onSend: () -> Void
-
-    private let titleRed1   = Color(red: 1.00, green: 0.23, blue: 0.23)
-    private let bodyText    = Color.black.opacity(0.9)
-    private let sheetStroke = Color.black.opacity(0.08)
-    private let sendGrad1   = Color(red: 0.98, green: 0.28, blue: 0.26)
-    private let sendGrad2   = Color(red: 0.82, green: 0.00, blue: 0.00)
-
     var body: some View {
         ZStack {
-            Color.black.opacity(0.35).ignoresSafeArea()
-            VStack(spacing: 14) {
-                Text("Trigger SOS !")
-                    .font(.system(size: 16, weight: .bold))
-                    .foregroundColor(titleRed1)
-                Text("Are you sure you want to trigger SOS?")
-                    .font(.system(size: 12))
-                    .foregroundColor(bodyText)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 6)
-                HStack(spacing: 12) {
-                    Button(action: { isShowing = false }) {
-                        Text("Cancel")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 9)
-                            .background(Capsule().fill(Color.gray))
-                    }
-                    .buttonStyle(.plain)
-                    Button(action: { onSend() }) {
-                        Text("Send")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 9)
-                            .background(
-                                Capsule().fill(
-                                    LinearGradient(
-                                        gradient: Gradient(colors: [sendGrad1, sendGrad2]),
-                                        startPoint: .top,
-                                        endPoint: .bottom
-                                    )
-                                )
-                            )
-                    }
-                    .buttonStyle(.plain)
+            Color.black.opacity(0.4).ignoresSafeArea()
+            VStack(spacing: 12) {
+                Text("Trigger SOS!")
+                    .font(.headline)
+                    .foregroundColor(.red)
+                Text("Confirm alert?")
+                    .font(.footnote)
+                HStack {
+                    Button("Cancel") { isShowing = false }.tint(.gray)
+                    Button("Send") { onSend() }.tint(.red)
                 }
             }
-            .padding(.vertical, 14)
-            .padding(.horizontal, 14)
-            .background(RoundedRectangle(cornerRadius: 20).fill(Color.white))
-            .overlay(RoundedRectangle(cornerRadius: 20).stroke(sheetStroke, lineWidth: 1))
-            .shadow(color: Color.black.opacity(0.22), radius: 10, x: 0, y: 6)
-            .padding(.horizontal, 10)
+            .padding()
+            .background(Color.white)
+            .cornerRadius(15)
         }
+    }
+}
+
+// MARK: - HALT Alert View (Immediate Start & Auto-Stop)
+struct HaltAlertView: View {
+    let message: String
+    let onDismiss: () -> Void
+    
+    @State private var timeRemaining = 15
+    @State private var hapticTimer: Timer?
+    
+    var body: some View {
+        ZStack {
+            Color.red.ignoresSafeArea()
+            
+            VStack(spacing: 15) {
+                Image(systemName: "hand.raised.fill")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 50, height: 50)
+                    .foregroundColor(.white)
+                    .symbolEffect(.bounce, options: .repeating)
+                
+                Text("HALT!")
+                    .bold()
+                    .font(.title)
+                    .multilineTextAlignment(.center)
+                    .foregroundColor(.white)
+                    .padding(.horizontal)
+                
+                Button(action: onDismiss) {
+                    Text(timeRemaining > 0 ? "Wait \(timeRemaining)s" : "OK")
+                        .font(.headline)
+                        .foregroundColor(timeRemaining > 0 ? .gray : .red)
+                        .padding(.horizontal, 30)
+                        .padding(.vertical, 10)
+                        .background(Color.white)
+                        .cornerRadius(20)
+                }
+                .buttonStyle(.plain)
+                .disabled(timeRemaining > 0)
+            }
+        }
+        .transition(.opacity)
+        .zIndex(100)
+        .onAppear { startAlerts() }
+        .onDisappear { stopAlerts() }
+    }
+    
+    private func startAlerts() {
+        // 1. Play IMMEDIATE haptic
+        WKInterfaceDevice.current().play(.notification)
+        
+        // 2. Schedule recurring haptic loop
+        hapticTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { _ in
+            WKInterfaceDevice.current().play(.notification)
+        }
+        
+        // 3. Countdown timer - Stops sound at 0
+        Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { timer in
+            if timeRemaining > 0 {
+                timeRemaining -= 1
+            } else {
+                // 🛑 Stop sounds/haptics automatically after 15s
+                stopAlerts()
+                timer.invalidate()
+            }
+        }
+    }
+    
+    private func stopAlerts() {
+        hapticTimer?.invalidate()
+        hapticTimer = nil
     }
 }
 
@@ -309,10 +441,10 @@ final class VoiceChatBackground {
         let guardianId = UserDefaults.standard.string(forKey: "guardianId") ?? ""
         let childId = UserDefaults.standard.string(forKey: "currentChildId") ?? ""
         guard !guardianId.isEmpty, !childId.isEmpty else { return }
-
-        guard let url = URL(string:
-            "https://getvoicemessagesapi-7gq4boqq6a-uc.a.run.app?guardianId=\(guardianId)&childId=\(childId)&limit=1"
-        ) else { return }
+        
+        let urlString = "https://getvoicemessagesapi-7gq4boqq6a-uc.a.run.app?guardianId=\(guardianId)&childId=\(childId)&limit=1"
+        
+        guard let url = URL(string: urlString) else { return }
 
         URLSession.shared.dataTask(with: url) { data, _, _ in
             guard let data,

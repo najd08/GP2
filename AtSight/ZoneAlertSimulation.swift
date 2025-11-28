@@ -229,7 +229,7 @@ struct ZoneAlertSimulation: View {
                     settings.unsafeZoneAlert = data["unsafeZoneAlert"] as? Bool ?? true
                     settings.lowBatteryAlert = data["lowBatteryAlert"] as? Bool ?? true
                     settings.watchRemovedAlert = data["watchRemovedAlert"] as? Bool ?? true
-                    settings.newAuthorAccount = data["newAuthorAccount"] as? Bool ?? true
+                    settings.newConnectionRequest = data["newConnectionRequest"] as? Bool ?? true
                     settings.sound = data["sound"] as? String ?? "default_sound"
                     print("✅ Successfully fetched notification settings for child.")
                 } else {

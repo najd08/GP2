@@ -332,5 +332,5 @@
 //    private func distance(from: CLLocationCoordinate2D, to: CLLocationCoordinate2D) -> Double {
 //        CLLocation(latitude: from.latitude, longitude: from.longitude)
 //            .distance(from: CLLocation(latitude: to.latitude, longitude: to.longitude))
-//    } 
+//    }
 //}

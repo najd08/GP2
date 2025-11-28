@@ -1,14 +1,5 @@
-//removed the "bypass linking" section ✅
-//we should let the parent access some of child's stuff without enforcing the watch link process! ✅
-//we should add "unlink watch" option. ✅
-//add shadows for dark mode for better UI. ✅
-//add icon to unlink watch button (it is bad, i know...) ✅
-//locked some features (voice messaging, view last location, and location history) behind the watch linking process and added a pop up message to inform user about it. ✅
-//link and unlink buttons are now bigger, indicating their importance. ✅
-//fix unlink and make it work properly, and make the child force quit from his parent screen if he has been unlinked.
-// ⚠️ Line 159: you can comment that section out since it is meant for debugging, it will not be included in the final release. ⚠️
-
-//merged codes 🤝
+// EDIT BY RIYAM: Updated 'linkButton' to toggle the 'isWatchLinked' field in Firestore instead of deleting the entire child document.
+// This preserves the child in the iOS list while signaling the watch (via API polling) to unlink.
 
 import SwiftUI
 import MapKit
@@ -20,21 +11,13 @@ struct ChildDetailView: View {
     @State var child: Child
     @Environment(\.presentationMode) var presentationMode
     @State private var guardianID: String = Auth.auth().currentUser?.uid ?? ""
-    @State private var viewRefreshToken = UUID() // MARK: New state variable to refresh the view
+    @State private var viewRefreshToken = UUID()
 
-    // MARK: Changed 'isLinked' from a computed property to a @State variable
-    // This allows us to update the UI instantly when unlinking.
     @State private var isLinked: Bool = false
-    
     @State private var showLinkWarning: Bool = false
-
-    // MARK: This is still a computed property, which is fine.
-    private var parentDisplayName: String {
-        if let email = Auth.auth().currentUser?.email {
-            return email.components(separatedBy: "@").first ?? "Parent"
-        }
-        return "Parent"
-    }
+    
+    // ✅ New state to hold the fetched name
+    @State private var realParentName: String = ""
 
     let columns = [GridItem(.flexible()), GridItem(.flexible())]
 
@@ -53,14 +36,12 @@ struct ChildDetailView: View {
 
                     Spacer()
 
-                    // Header updated to include the 'isLinked' icon
                     HStack(spacing: 6) {
                         Text(child.name)
                             .font(.largeTitle)
                             .bold()
                             .foregroundColor(Color("BlackFont"))
 
-                        // This now reads from the @State variable
                         if isLinked {
                             Image(systemName: "link.circle.fill")
                                 .foregroundColor(Color("Blue"))
@@ -75,16 +56,14 @@ struct ChildDetailView: View {
                 .padding()
                 .padding(.top, -10)
 
-                // MARK: The grid is now always visible even when child is not linked to a watch.
                 ScrollView {
                     
                     linkButton()
-                        .padding(.horizontal) // Match grid's horizontal padding
-                        .padding(.top)        // Match grid's top padding
+                        .padding(.horizontal)
+                        .padding(.top)
 
                     LazyVGrid(columns: columns, spacing: 20) {
                             
-                        // 🎙️ Voice Chat button → passes guardianID + childId + childName
                         if isLinked {
                             NavigationLink(
                                 destination: VoiceChatPhone(
@@ -107,7 +86,7 @@ struct ChildDetailView: View {
                                     color: Color("ColorGray")
                                 )
                             }
-                            .buttonStyle(PlainButtonStyle()) // Makes button act like a plain view
+                            .buttonStyle(PlainButtonStyle())
                         }
 
                         if isLinked {
@@ -156,28 +135,26 @@ struct ChildDetailView: View {
                             gridButtonContent(icon: "mappin.and.ellipse", title: "Zones Setup", color: Color("ColorRed"))
                         }
                         
-                        // MARK: - Added this section for debugging sprint3 & 4 features:
                         NavigationLink(destination: ZoneAlertSimulation(childID: child.id)) {
                             gridButtonContent(icon: "map.circle", title: "Zones Alert Test", color: Color("ColorYellow"))
                         }
-                        //MARK: - you can comment this previous section for the final release!
-                        
-                        
                     }
                     .padding()
                 }
                 .background(Color("BgColor"))
                 .cornerRadius(15)
-                .id(viewRefreshToken) // MARK: New state variable to refresh the view
+                .id(viewRefreshToken)
             }
             .background(Color("BgColor").ignoresSafeArea())
             .navigationBarHidden(true)
             .navigationBarBackButtonHidden(true)
             .onAppear {
                 guardianID = Auth.auth().currentUser?.uid ?? ""
-                // MARK: Load the link status from UserDefaults into the @State variable
                 isLinked = UserDefaults.standard.bool(forKey: "linked_\(child.id)")
                 viewRefreshToken = UUID()
+                
+                // ✅ Fetch the real parent name immediately
+                fetchParentName()
             }
             
             if showLinkWarning {
@@ -185,26 +162,37 @@ struct ChildDetailView: View {
                     .font(.callout)
                     .fontWeight(.medium)
                     .padding()
-                    .background(Color.black.opacity(0.8)) // Use 0.8 opacity for better visibility
+                    .background(Color.black.opacity(0.8))
                     .foregroundColor(.white)
                     .cornerRadius(15)
                     .shadow(radius: 10)
-                    .transition(.opacity.combined(with: .scale(scale: 0.85))) // Animate scale and opacity
-                    .zIndex(10) // Ensure it's on top of all other content
+                    .transition(.opacity.combined(with: .scale(scale: 0.85)))
+                    .zIndex(10)
+            }
+        }
+    }
+    
+    // ✅ Helper to fetch name from Firestore
+    private func fetchParentName() {
+        guard let uid = Auth.auth().currentUser?.uid else { return }
+        let db = Firestore.firestore()
+        db.collection("guardians").document(uid).getDocument { snapshot, error in
+            if let data = snapshot?.data(), let name = data["FirstName"] as? String {
+                self.realParentName = name
+                print("✅ Fetched parent name: \(name)")
+            } else {
+                // Fallback if name is missing
+                self.realParentName = "Parent"
             }
         }
     }
     
     private func triggerLinkWarning() {
-
-        // Animate the pop-up appearing
         withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
             showLinkWarning = true
         }
-        
-        // Set a timer to hide it
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { // 2 second duration
-            withAnimation(.easeOut(duration: 0.4)) { // Fade out
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            withAnimation(.easeOut(duration: 0.4)) {
                 showLinkWarning = false
             }
         }
@@ -213,16 +201,29 @@ struct ChildDetailView: View {
     @ViewBuilder
     private func linkButton() -> some View {
         if isLinked {
-            // MARK: This is the new "Unlink Watch" button
             Button(action: {
-                // Update UserDefaults
+                guard let uid = Auth.auth().currentUser?.uid else { return }
+                let db = Firestore.firestore()
+                
+                print("🔓 Unlinking watch for child: \(child.name) (ID: \(child.id))")
+                
+                // 1. Update the child document to set isWatchLinked = false
+                // This tells the API polling on the watch that the link is invalid without deleting the child.
+                db.collection("guardians").document(uid).collection("children").document(child.id).updateData(["isWatchLinked": false]) { error in
+                    if let error = error {
+                        print("❌ Error unlinking: \(error.localizedDescription)")
+                    } else {
+                        print("✅ Unlink successful. isWatchLinked set to false.")
+                    }
+                }
+                
+                // 2. Update Local State
                 UserDefaults.standard.set(false, forKey: "linked_\(child.id)")
-                // Update the local @State variable to refresh the UI instantly
                 isLinked = false
+                
             }) {
-                // MARK: New wide layout
                 VStack {
-                    Image(systemName: "square.slash") // Changed icon
+                    Image(systemName: "square.slash")
                         .resizable()
                         .scaledToFit()
                         .frame(width: 50, height: 50)
@@ -233,21 +234,20 @@ struct ChildDetailView: View {
                         .multilineTextAlignment(.center)
                 }
                 .frame(height: 140)
-                .frame(maxWidth: .infinity) // Spans full width
+                .frame(maxWidth: .infinity)
                 .background(Color("BgColor"))
                 .cornerRadius(20)
                 .shadow(color: Color("BlackFont").opacity(0.3), radius: 10)
             }
         } else {
-            // MARK: This is the "Link Watch" button
             NavigationLink(
                 destination: ParentLinkView(
                     childId: child.id,
                     childName: child.name,
-                    parentName: parentDisplayName
+                    // ✅ Use the real fetched name, or fallback to "Parent" if still loading
+                    parentName: realParentName.isEmpty ? "Parent" : realParentName
                 )
             ) {
-                // MARK: New wide layout
                 VStack {
                     Image(systemName: "link")
                         .resizable()
@@ -260,7 +260,7 @@ struct ChildDetailView: View {
                         .multilineTextAlignment(.center)
                 }
                 .frame(height: 140)
-                .frame(maxWidth: .infinity) // Spans full width
+                .frame(maxWidth: .infinity)
                 .background(Color("BgColor"))
                 .cornerRadius(20)
                 .shadow(color: Color("BlackFont").opacity(0.3), radius: 10)
@@ -268,7 +268,6 @@ struct ChildDetailView: View {
         }
     }
 
-    // MARK: Helper for Button Layout
     @ViewBuilder
     private func gridButtonContent(icon: String, title: String, color: Color) -> some View {
         VStack {
@@ -283,10 +282,9 @@ struct ChildDetailView: View {
                 .multilineTextAlignment(.center)
         }
         .frame(width: (UIScreen.main.bounds.width / 2) - 30, height: 140)
-        // 30 comes from horizontal padding and spacing between columns
         .background(Color("BgColor"))
         .cornerRadius(20)
-        .shadow(color: Color("BlackFont").opacity(0.3), radius: 10) //MARK: added shadow color for dark mode.
+        .shadow(color: Color("BlackFont").opacity(0.3), radius: 10)
     }
 }
 
@@ -371,18 +369,16 @@ struct HomeView: View {
                         print("✅ Updated guardianID in UserDefaults: \(uid)")
                     }
                     
-                    // MARK: Original print statements from old code preserved
                     print("🔑 Logged in UID:", Auth.auth().currentUser?.uid ?? "No user")
                     print("🟢 Stored guardianID:", UserDefaults.standard.string(forKey: "guardianID") ?? "❌ none")
                 }
 
             }
             .padding(.horizontal, 10)
-            .background(Color("BgColor").ignoresSafeArea()) // ✅ خلفية الصفحة كاملة
+            .background(Color("BgColor").ignoresSafeArea())
         }
     }
 
-    // MARK: Firestore
     func fetchChildrenFromFirestore() {
         guard let userId = Auth.auth().currentUser?.uid else { return }
         let db = Firestore.firestore()
@@ -418,7 +414,6 @@ struct HomeView: View {
         }
     }
 }
-
 
 #Preview("Home") {
     HomeView(selectedChild: .constant(nil), expandedChild: .constant(nil)).environmentObject(AppState())

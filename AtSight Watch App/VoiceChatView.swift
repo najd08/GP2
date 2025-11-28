@@ -1,31 +1,23 @@
-//
-//  VoiceChatView.swift
-//  AtSight (WatchKit Extension)
-//
-//  Updated by Leon on 28/10/2025
-//  ✅ Prevents replaying the same voice message twice (shared memory with HomeView)
-//  ✅ Fixed @State property wrapper errors
-//
+// EDIT BY RIYAM: Modified to accept guardianId/names as parameters to support multi-guardian chats. Removed internal @State loading for IDs.
 
 import SwiftUI
 import AVFoundation
 import WatchKit
 
 struct VoiceChatView: View {
+    // ✅ Parameters passed from HomeView
+    var guardianId: String
+    var childId: String
+    var childName: String
+    var parentName: String
+
     @State private var recorder: AVAudioRecorder?
     @State private var player: AVPlayer?
     @State private var isRecording = false
     @State private var audioURL: URL?
     @State private var timer: Timer?
-    @State private var isPlaying = false
-
-    // ✅ IDs
-    @State private var guardianId: String = ""
-    @State private var childId: String = ""
-    @State private var childName: String = ""
-    @State private var parentName: String = ""
-
-    // ✅ Shared playback tracking (no @State needed)
+    
+    // Shared playback tracking
     private var lastURL: String? {
         get { UserDefaults.standard.string(forKey: "lastPlayedVoiceURL") }
         set { UserDefaults.standard.set(newValue, forKey: "lastPlayedVoiceURL") }
@@ -38,13 +30,13 @@ struct VoiceChatView: View {
 
     var body: some View {
         VStack(spacing: 12) {
-            // MARK: - Header
+            // Header
             HStack(spacing: 8) {
                 Image(systemName: "person.circle.fill")
                     .resizable()
                     .frame(width: 28, height: 28)
                     .foregroundColor(.blue)
-                Text(parentName.isEmpty ? "Parent" : parentName)
+                Text(parentName)
                     .font(.system(size: 16, weight: .medium))
                 Spacer()
             }
@@ -53,7 +45,7 @@ struct VoiceChatView: View {
 
             Spacer()
 
-            // MARK: - Mic Button
+            // Mic Button
             ZStack {
                 Circle()
                     .fill(isRecording ? Color.red : Color.green.opacity(0.8))
@@ -74,7 +66,6 @@ struct VoiceChatView: View {
             Spacer()
         }
         .onAppear {
-            fetchIDsFromDefaults()
             startAutoFetch()
         }
         .onDisappear {
@@ -89,10 +80,7 @@ struct VoiceChatView: View {
             try session.setCategory(.playAndRecord, mode: .default)
             try session.setActive(true)
             session.requestRecordPermission { granted in
-                guard granted else {
-                    print("🚫 Mic permission denied")
-                    return
-                }
+                guard granted else { return }
 
                 let url = FileManager.default.temporaryDirectory.appendingPathComponent("watch_record.m4a")
                 let settings: [String: Any] = [
@@ -106,17 +94,10 @@ struct VoiceChatView: View {
                     recorder = try AVAudioRecorder(url: url, settings: settings)
                     recorder?.record()
                     audioURL = url
-                    DispatchQueue.main.async {
-                        isRecording = true
-                    }
-                    print("🎙️ Recording started")
-                } catch {
-                    print("❌ Recorder error:", error.localizedDescription)
-                }
+                    DispatchQueue.main.async { isRecording = true }
+                } catch { print(error) }
             }
-        } catch {
-            print("❌ Audio session error:", error.localizedDescription)
-        }
+        } catch { print(error) }
     }
 
     // MARK: - Stop Recording
@@ -124,20 +105,13 @@ struct VoiceChatView: View {
         recorder?.stop()
         isRecording = false
         guard let url = audioURL else { return }
-        print("✅ Recording stopped, uploading…")
         uploadToAPI(fileURL: url)
     }
 
-    // MARK: - Upload Voice
-    private func uploadToAPI(fileURL: URL, retryCount: Int = 0) {
-        guard !guardianId.isEmpty, !childId.isEmpty else {
-            print("⚠️ Missing guardianId or childId — cannot upload")
-            return
-        }
-
+    // MARK: - Upload
+    private func uploadToAPI(fileURL: URL) {
         guard let data = try? Data(contentsOf: fileURL) else { return }
         let base64 = data.base64EncodedString()
-
         guard let url = URL(string: "https://uploadvoicemessageapi-7gq4boqq6a-uc.a.run.app") else { return }
 
         let body: [String: Any] = [
@@ -149,24 +123,10 @@ struct VoiceChatView: View {
             "ts": Date().timeIntervalSince1970
         ]
 
-        var req = URLRequest(url: url)
-        req.httpMethod = "POST"
-        req.addValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = try? JSONSerialization.data(withJSONObject: body)
-
-        URLSession.shared.dataTask(with: req) { _, resp, err in
-            if let err = err {
-                print("❌ Upload failed:", err.localizedDescription)
-                return
-            }
-
-            if let http = resp as? HTTPURLResponse {
-                print("✅ Uploaded with status:", http.statusCode)
-            }
-        }.resume()
+        APIHelper.shared.post(to: url.absoluteString, body: body)
     }
 
-    // MARK: - Auto Fetch + Prevent Repeat
+    // MARK: - Fetch
     private func startAutoFetch() {
         timer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { _ in
             fetchLatestMessage()
@@ -174,8 +134,6 @@ struct VoiceChatView: View {
     }
 
     private func fetchLatestMessage() {
-        guard !guardianId.isEmpty, !childId.isEmpty else { return }
-
         guard let url = URL(string:
             "https://getvoicemessagesapi-7gq4boqq6a-uc.a.run.app?guardianId=\(guardianId)&childId=\(childId)&limit=1"
         ) else { return }
@@ -198,7 +156,6 @@ struct VoiceChatView: View {
             let wasPlayed = UserDefaults.standard.bool(forKey: "lastPlayedVoicePlayed")
             if !wasPlayed {
                 UserDefaults.standard.set(true, forKey: "lastPlayedVoicePlayed")
-                print("🎧 New message detected → playing…")
                 WKInterfaceDevice.current().play(.notification)
                 DispatchQueue.main.async {
                     playAudio(from: audioURL)
@@ -212,15 +169,4 @@ struct VoiceChatView: View {
         player = AVPlayer(url: url)
         player?.play()
     }
-
-    // MARK: - IDs
-    private func fetchIDsFromDefaults() {
-        guardianId = UserDefaults.standard.string(forKey: "guardianId") ?? ""
-        childId = UserDefaults.standard.string(forKey: "currentChildId") ?? ""
-        childName = UserDefaults.standard.string(forKey: "childDisplayName") ?? ""
-        parentName = UserDefaults.standard.string(forKey: "parentDisplayName") ?? ""
-        print("⌚️ [VoiceChatView] Loaded IDs → guardianId: \(guardianId), childId: \(childId)")
-    }
 }
-
-#Preview { VoiceChatView() }

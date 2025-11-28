@@ -1,14 +1,5 @@
-//
-//  NotificationsHistory.swift
-//  AtSight iOS App
-//
-//  Created by Leena on 22/10/2025.
-//  Updated: Added support for "watch_removed" event.
-//
 
-//Took Najs's fixed code from WhatsApp. 👤
-//Add delete notification button? ❓
-//should display time stamp for each notification. ✅
+//Added low battery alert event handle ✅
 
 import SwiftUI
 import Firebase
@@ -30,8 +21,13 @@ extension NotificationItem {
     
     // Determines the color based on the isSafeZone state or event type.
     var indicatorColor: Color {
-        if event == "watch_removed" {
-            return Color("ColorRed") // ✅ red for lost heart rate
+        // EDIT BY RIYAM: Added 'battery_low' to red color condition
+        if event == "watch_removed" || event == "battery_low" {
+            return Color("ColorRed") // ✅ red for lost heart rate or low battery
+        }
+        // Handle SOS Alert event
+        if event == "sos_alert" {
+            return Color("ColorRed")
         }
         guard let isSafe = isSafeZone else {
             // This is the color for neutral notifications (isSafeZone is nil).
@@ -50,6 +46,10 @@ extension NotificationItem {
     var iconName: String {
         if event == "watch_removed" {
             return "heart.slash" // ✅ distinct icon for watch removed
+        }
+        // EDIT BY RIYAM: Added specific icon for low battery
+        if event == "battery_low" {
+            return "exclamationmark.triangle"
         }
         guard isSafeZone != nil else {
             // A neutral icon for adding a child or other non-zone alerts.

@@ -66,7 +66,7 @@ func saveChildToFirestore(guardianID: String, child: Child, completion: @escapin
                 "unsafeZoneAlert": true,
                 "lowBatteryAlert": true,
                 "watchRemovedAlert": true,
-                "newAuthorAccount": true,
+                "newConnectionRequest": true,
                 "sound": "default_sound"
             ]
 

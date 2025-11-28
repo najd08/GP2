@@ -1,12 +1,7 @@
-//
-//  BatteryMonitor.swift
-//  AtSight Watch App
-//
-//  Created by Leena on 07/09/2025.
+//  EDITS BY RIYAM:
 //  Updated on 22/10/2025: Added guardianId + field name alignment with API
+//  Updated sendBattery to loop through ALL linked guardians (via PairingState) instead of just the single stored ID.
 //
-
-//Last updated by Najd's code from WhatsApp. 👤
 
 import WatchKit
 import Foundation
@@ -77,19 +72,44 @@ final class BatteryMonitor: NSObject {
     private func sendBattery(percentage: Int) {
         guard let childName = currentChildName else { return }
 
-        let childId = UserDefaults.standard.string(forKey: "currentChildId") ?? "unknown"
-        let guardianId = UserDefaults.standard.string(forKey: "guardianId") ?? "unknown"
+        // EDIT BY RIYAM: Iterate through all linked guardians to broadcast battery status
+        Task { @MainActor in
+            let guardians = PairingState.shared.linkedGuardianIDs
+            let childMap = PairingState.shared.guardianChildIDs
+            
+            if guardians.isEmpty {
+                // Fallback for edge case where list might be empty but defaults exist
+                let fallbackChildId = UserDefaults.standard.string(forKey: "currentChildId") ?? "unknown"
+                let fallbackGuardianId = UserDefaults.standard.string(forKey: "guardianId") ?? "unknown"
+                
+                let payload: [String: Any] = [
+                    "guardianId": fallbackGuardianId,
+                    "childId": fallbackChildId,
+                    "childName": childName,
+                    "battery": percentage,
+                    "ts": Date().timeIntervalSince1970
+                ]
+                APIHelper.shared.post(to: API.uploadBattery, body: payload)
+                print("📤 [BatteryMonitor] Sent via API (Fallback):", payload)
+                return
+            }
 
-        let payload: [String: Any] = [
-            "guardianId": guardianId,
-            "childId": childId,
-            "childName": childName,
-            "battery": percentage,
-            "ts": Date().timeIntervalSince1970
-        ]
+            // Loop through all guardians and send individually
+            for guardianId in guardians {
+                let childId = childMap[guardianId] ?? UserDefaults.standard.string(forKey: "currentChildId") ?? "unknown"
 
-        APIHelper.shared.post(to: API.uploadBattery, body: payload)
-        print("📤 [BatteryMonitor] Sent via API:", payload)
+                let payload: [String: Any] = [
+                    "guardianId": guardianId,
+                    "childId": childId,
+                    "childName": childName,
+                    "battery": percentage,
+                    "ts": Date().timeIntervalSince1970
+                ]
+
+                APIHelper.shared.post(to: API.uploadBattery, body: payload)
+                print("📤 [BatteryMonitor] Sent battery \(percentage)% to guardian: \(guardianId)")
+            }
+        }
     }
 
     deinit { stopMonitoring() }

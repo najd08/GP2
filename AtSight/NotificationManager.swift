@@ -1,5 +1,7 @@
 //MARK: This class is used for notifications and alerts managment:
 //Merge Edit: added "lowBatteryThreshold" to "NotificationSettings" struct 🤝
+//added sos cases
+// ✨ Updated playSound to return AVAudioPlayer
 
 import Foundation
 import UserNotifications
@@ -11,18 +13,29 @@ class SoundPlayer {
     static let shared = SoundPlayer()
     private var audioPlayer: AVAudioPlayer?
 
-    // Plays a sound file with the given name (needs a .wav extension).
-    func playSound(named soundName: String) {
-        guard let url = Bundle.main.url(forResource: soundName, withExtension: "wav") else {
-            print("Sound file not found")
-            return
+    // ✨ 1. Modified function to return the AVAudioPlayer instance
+    /// Plays a sound file with the given name (needs a .wav extension).
+    /// Returns the `AVAudioPlayer` instance so it can be stopped manually.
+    func playSound(named soundName: String) -> AVAudioPlayer? {
+        // Ensure the name includes the extension if it's missing
+        let file = (soundName as NSString)
+        let name = file.deletingPathExtension
+        let ext = file.pathExtension.isEmpty ? "wav" : file.pathExtension
+        
+        guard let url = Bundle.main.url(forResource: name, withExtension: ext) else {
+            print("Sound file not found: \(name).\(ext)")
+            return nil
         }
 
         do {
             audioPlayer = try AVAudioPlayer(contentsOf: url)
             audioPlayer?.play()
+            // ✨ 2. Return the player
+            return audioPlayer
         } catch {
             print("Failed to play sound: \(error)")
+            // ✨ 3. Return nil on failure
+            return nil
         }
     }
 }
@@ -35,6 +48,7 @@ enum NotificationSound: String, CaseIterable, Identifiable {
     case bell = "Bell"
     case chime = "Chime"
     case chirp = "Chirp"
+    case sos = "SOS Alert" // ✨ NEW CASE
 
     var id: String { self.rawValue }
 
@@ -45,6 +59,7 @@ enum NotificationSound: String, CaseIterable, Identifiable {
         case .bell: return "bell_sound"
         case .chime: return "chime_sound"
         case .chirp: return "chirp_sound"
+        case .sos: return "sos_sound" // ✨ NEW FILENAME
         }
     }
 
@@ -61,7 +76,7 @@ struct NotificationSettings: Codable, Equatable {
     var unsafeZoneAlert: Bool = true
     var lowBatteryAlert: Bool = true
     var watchRemovedAlert: Bool = true
-    var newAuthorAccount: Bool = true
+    var newConnectionRequest: Bool = true
     var sound: String = "default_sound"
     var lowBatteryThreshold: Int = 20 //for watch low battery alerts
 }

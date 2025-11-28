@@ -399,7 +399,7 @@
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "We use your location to keep your parent informed.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "This app needs microphone access to record and send voice messages.";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
-				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = gp.Sprint4.AtSight;
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = gp.Sprint5.AtSight;
 				INFOPLIST_PREPROCESS = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -407,7 +407,7 @@
 				);
 				MARKETING_VERSION = 1.0;
 				NEW_SETTING = "";
-				PRODUCT_BUNDLE_IDENTIFIER = gp.Sprint4.AtSight.watchkitapp;
+				PRODUCT_BUNDLE_IDENTIFIER = gp.Sprint5.AtSight.watchkitapp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = watchos;
 				SKIP_INSTALL = YES;
@@ -438,7 +438,7 @@
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "We use your location to keep your parent informed.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "This app needs microphone access to record and send voice messages.";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
-				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = gp.Sprint4.AtSight;
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = gp.Sprint5.AtSight;
 				INFOPLIST_PREPROCESS = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -446,7 +446,7 @@
 				);
 				MARKETING_VERSION = 1.0;
 				NEW_SETTING = "";
-				PRODUCT_BUNDLE_IDENTIFIER = gp.Sprint4.AtSight.watchkitapp;
+				PRODUCT_BUNDLE_IDENTIFIER = gp.Sprint5.AtSight.watchkitapp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = watchos;
 				SKIP_INSTALL = YES;
@@ -487,7 +487,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = gp.Sprint4.AtSight;
+				PRODUCT_BUNDLE_IDENTIFIER = gp.Sprint5.AtSight;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SDKROOT = iphoneos;
@@ -526,7 +526,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = gp.Sprint4.AtSight;
+				PRODUCT_BUNDLE_IDENTIFIER = gp.Sprint5.AtSight;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SDKROOT = iphoneos;

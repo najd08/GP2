@@ -128,18 +128,18 @@ struct AddZonePage: View {
                             }
                         }) {
                             Image(systemName: "location.fill")
-                                .font(.title2).padding(10).background(Color.white).clipShape(Circle()).shadow(radius: 2)
+                                .font(.title2).padding(10).background(Color("TextFieldBg")).clipShape(Circle()).shadow(radius: 2)
                         }
                         
                         // Zoom in button
                         Button(action: { zoomIn() }) {
                             Image(systemName: "plus.magnifyingglass")
-                                .font(.title2).padding(10).background(Color.white).clipShape(Circle()).shadow(radius: 2)
+                                .font(.title2).padding(10).background(Color("TextFieldBg")).clipShape(Circle()).shadow(radius: 2)
                         }
                         // Zoom out button
                         Button(action: { zoomOut() }) {
                             Image(systemName: "minus.magnifyingglass")
-                                .font(.title2).padding(10).background(Color.white).clipShape(Circle()).shadow(radius: 2)
+                                .font(.title2).padding(10).background(Color("TextFieldBg")).clipShape(Circle()).shadow(radius: 2)
                         }
                     }
                     .padding(.trailing, 20)

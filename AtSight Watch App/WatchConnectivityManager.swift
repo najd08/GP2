@@ -1,13 +1,10 @@
-//
-//  WatchConnectivityManager-merged.swift
-//  AtSight (WatchKit Extension)
-//
-//  Merged to keep BOTH features:
-//  - Battery threshold sync via ApplicationContext
-//  - One-time GPS fix sent to iPhone on successful link
-//  - ✅ Store childId/parent/child names for later live location sends
-//  - ✅ Now also stores guardianId for API use
-//
+// EDIT BY RIYAM: Updated "link" handler to include a console indicator for Admin status.
+// - Checks if guardian list is empty.
+// - If empty -> isAdmin = true, update child's name, PRINT ADMIN MESSAGE with parent name.
+// - If not empty -> isAdmin = false, do NOT update child's name.
+// - Sends isAdmin flag back to iOS.
+// - Fixed missing 'isAdmin' argument error in addGuardian call.
+// - Fixed wrong variable passed to childId (was passing childName).
 
 import WatchConnectivity
 import Combine
@@ -48,13 +45,10 @@ final class WatchConnectivityManager: NSObject, WCSessionDelegate, ObservableObj
         handle(message, reply: replyHandler)
     }
 
-    // ✅ Battery threshold sync via ApplicationContext
     func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String : Any]) {
         if let threshold = applicationContext["lowBatteryThreshold"] as? Int {
             BatteryMonitor.shared.updateThreshold(threshold)
             print("🔋 [WCM] Updated lowBatteryThreshold on watch:", threshold)
-        } else {
-            print("ℹ️ [WCM] applicationContext without threshold:", applicationContext)
         }
     }
 
@@ -72,6 +66,7 @@ final class WatchConnectivityManager: NSObject, WCSessionDelegate, ObservableObj
             let childName   = message["childName"] as? String ?? ""
             let parentName  = message["parentName"] as? String ?? ""
             let childId     = message["childId"] as? String ?? ""
+            let guardianId  = message["guardianId"] as? String ?? ""
 
             Task { @MainActor in
                 let currentPIN = PairingState.shared.pin
@@ -83,32 +78,39 @@ final class WatchConnectivityManager: NSObject, WCSessionDelegate, ObservableObj
                 }
 
                 if pin == currentPIN {
-                    // 1️⃣ Reply first
-                    reply?("linked".asReply())
+                    // ✅ Check if this is the first guardian (list empty)
+                    let isFirstGuardian = PairingState.shared.linkedGuardianIDs.isEmpty
+                    let isAdmin = isFirstGuardian
 
-                    // 2️⃣ Update UI state
-                    PairingState.shared.childName  = childName
-                    PairingState.shared.parentName = parentName
-                    PairingState.shared.linked     = true
+                    let replyData: [String: Any] = [
+                        "status": "linked",
+                        "isAdmin": isAdmin
+                    ]
+                    reply?(replyData)
 
-                    // 3️⃣ ✅ Persist identifiers for later (live location, UI)
+                    // ✅ Logic: Only update child name if Admin (first guardian)
+                    if isFirstGuardian {
+                        PairingState.shared.childName = childName
+                        if !childName.isEmpty {
+                            UserDefaults.standard.set(childName, forKey: "childDisplayName")
+                        }
+                        print("👑 Admin Access Granted: \(parentName) is the Admin. Child name set to \(childName).")
+                    } else {
+                        print("👥 Subsequent guardian linked: \(parentName). Not Admin. Keeping existing child name: \(PairingState.shared.childName)")
+                    }
+                   
+                    // ✅ Add guardian to list WITH NAME and ADMIN FLAG
+                    if !guardianId.isEmpty {
+                        // Fixed: Passed 'childId' variable correctly and added 'isAdmin'
+                        PairingState.shared.addGuardian(id: guardianId, name: parentName, childId: childId, isAdmin: isAdmin)
+                        UserDefaults.standard.set(guardianId, forKey: "guardianId") // Last connected
+                    }
+
                     if !childId.isEmpty {
                         UserDefaults.standard.set(childId, forKey: "currentChildId")
                     }
-                    if !parentName.isEmpty {
-                        UserDefaults.standard.set(parentName, forKey: "parentDisplayName")
-                    }
-                    if !childName.isEmpty {
-                        UserDefaults.standard.set(childName, forKey: "childDisplayName")
-                    }
 
-                    // ✅ Store guardianId if received from iPhone
-                    if let guardianId = message["guardianId"] as? String {
-                        UserDefaults.standard.set(guardianId, forKey: "guardianId")
-                        print("🧩 [WCM] Stored guardianId:", guardianId)
-                    }
-
-                    // 4️⃣ One-time GPS fix and send to iPhone
+                    // Send GPS fix
                     WatchLocationManager.shared.requestOnce { loc in
                         var payload: [String: Any] = ["type": "watch_location"]
                         if !childId.isEmpty { payload["childId"] = childId }
@@ -117,24 +119,19 @@ final class WatchConnectivityManager: NSObject, WCSessionDelegate, ObservableObj
                             payload["lon"] = loc.coordinate.longitude
                             payload["acc"] = loc.horizontalAccuracy
                             payload["ts"]  = loc.timestamp.timeIntervalSince1970
-                        } else {
-                            payload["error"] = "no_location"
                         }
-
-                        let s = WCSession.default
-                        if s.isReachable {
-                            s.sendMessage(payload, replyHandler: nil) {
-                                print("⚠️ [WCM] sendMessage error:", $0.localizedDescription)
-                                s.transferUserInfo(payload)
-                            }
-                        } else {
-                            s.transferUserInfo(payload)
-                        }
-                        print("📤 [WCM] sent initial fix:", payload)
+                        WCSession.default.sendMessage(payload, replyHandler: nil)
                     }
-
                 } else {
                     reply?("wrong_pin".asReply())
+                }
+            }
+           
+        case "unlink":
+            if let guardianId = message["guardianId"] as? String {
+                print("⌚️ [WCM] Received unlink request for guardian: \(guardianId)")
+                Task { @MainActor in
+                    PairingState.shared.removeGuardian(guardianId)
                 }
             }
 
