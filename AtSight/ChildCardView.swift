@@ -1,4 +1,9 @@
-//fixed a bug in the card colors, the pink and blue used to translate to gray color. ✅
+//
+//  ChildCardView.swift
+//  AtSightSprint0Test
+//
+//  Created by Najd Alsabi on 13/02/2025.
+//
 
 import SwiftUI
 

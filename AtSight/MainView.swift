@@ -1,6 +1,8 @@
 //
 //  MainView.swift
-//  AtSight
+//  Atsight
+//
+//  Created by Najd Alsabi on 22/03/2025.
 //
 //  Updated by Leon on 28/10/2025: Added AlertPage overlay for continuous zone monitoring. ❌ commented out.
 //

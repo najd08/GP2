@@ -1,3 +1,10 @@
+//
+//  ProfileView.swift
+//  Atsight
+//
+//  Created by Najd Alsabi on 22/03/2025.
+//
+
 import SwiftUI
 
 struct ProfileView: View {

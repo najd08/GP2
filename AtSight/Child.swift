@@ -1,4 +1,9 @@
-
+//
+//  Child.swift
+//  Atsight
+//
+//  Created by Najd Alsabi on 31/03/2025.
+//
 
 import Foundation
 import SwiftUI

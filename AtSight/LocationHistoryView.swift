@@ -1,3 +1,10 @@
+//
+//  LocationHistoryView.swift
+//  Atsight
+//
+//  Created by Najd Alsabi on 28/04/2025.
+//
+
 // Edit by Riyam: updated the back button to fit Dark Mode (line 266). ✅
 // updated the mappin icon color from blue to black for consistency (line 301). ✅
 // Added filter by time (last 24 hours, 7 days, 30 days) ✅

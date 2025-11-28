@@ -2,7 +2,6 @@
 //  HaltReceiver.swift
 //  AtSight
 //
-//  Created by ThiccBoi on 10/11/2025.
 //
 //  EDIT BY RIYAM: Implemented the HaltReceiver as a shared ObservableObject to poll the checkHaltStatus API,
 //  manage the HALT popup state, the 15-second dismissal timer, and the repeating haptics.

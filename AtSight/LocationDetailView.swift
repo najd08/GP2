@@ -1,3 +1,10 @@
+//
+//  LocationDetailView.swift
+//  Atsight
+//
+//  Created by lona on 23/04/2025.
+//
+
 import SwiftUI
 import MapKit
 

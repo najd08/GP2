@@ -1,4 +1,9 @@
-
+//
+//  BatteryReceiver.swift
+//  AtSight Watch App
+//
+//  Created by Najd Alsabi on 10/10/2025.
+//
 //  EDIT BY RIYAM: Added Auth state listener to ensure we only listen for alerts AFTER login.
 //  EDIT BY RIYAM: Fixed Timestamp initialization.
 //  EDIT BY RIYAM: Added 'sendLowBatteryLocalNotification' with settings lookup.

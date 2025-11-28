@@ -1,3 +1,9 @@
+//
+//  BatteryMonitor.swift
+//  AtSight Watch App
+//
+//  Created by Najd Alsabi on 10/10/2025.
+//
 //  EDITS BY RIYAM:
 //  Updated on 22/10/2025: Added guardianId + field name alignment with API
 //  Updated sendBattery to loop through ALL linked guardians (via PairingState) instead of just the single stored ID.

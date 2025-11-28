@@ -1,3 +1,10 @@
+//
+//  AddZonePage.swift
+//  Atsight
+//
+//  Created by Najd Alsabi on 21/04/2025.
+//
+
 //fixed zones fetching by changing firebase rules! ✅
 //removed the need for tap gesture due to a conflict from the new update. now you should be able to move the pin anywhere you want then add the zone, no tapping on screen needed. ✅
 

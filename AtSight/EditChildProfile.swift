@@ -1,7 +1,9 @@
-// NOTE BY RIYAM: re-added the missing buttons for authorized people and customize notifcations ✅
-// commented the other navigation links since they are redunant and cause error...
-// need to add a notification history item message to fire base for delete child function ✅
-// delete function leave orphaned data in fire base! need to update this funtion!! ⚠️
+//
+//  EditChildProfile.swift
+//  Atsight
+//
+//  Created by Najd Alsabi on 21/04/2025.
+//
 
 import SwiftUI
 import Firebase
