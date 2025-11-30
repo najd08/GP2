@@ -45,7 +45,7 @@ Inside the main repository directory you will find:
 **2.** If prompted, click **"Trust and Open"** to proceed.  
 **3.** Once Xcode opens, click the **Run** button to launch the application. The simulator will be selected automatically.
 
-# 
+## Final Message
 Thank you for using **AtSight** —  
 We hope it brings families **peace of mind, comfort, and safety**. 🤝💙  
 **Enjoy!** 😊
