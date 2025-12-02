@@ -136,17 +136,17 @@ struct MainView: View {
         }
         .ignoresSafeArea(.container, edges: .bottom)
         
-        // ✅ Overlay running silently in the background (from new code)
-        .overlay(
-                    Group {
-                        // MARK: Loop over all children, not just 'selectedChild'
-                        ForEach(children) { child in
-                            ZoneAlertSimulation(childID: child.id)
-                                .frame(width: 0, height: 0) // hidden but active
-                                .opacity(0)
-                        }
-                    }
-                )
+//        // ✅ Overlay running silently in the background (from new code)
+//        .overlay(
+//                    Group {
+//                        // MARK: Loop over all children, not just 'selectedChild'
+//                        ForEach(children) { child in
+//                            ZoneAlertSimulation(childID: child.id)
+//                                .frame(width: 0, height: 0) // hidden but active
+//                                .opacity(0)
+//                        }
+//                    }
+//                )
         //MARK: SOS Alert View as a global overlay
         .overlay(
             ZStack {

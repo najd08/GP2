@@ -135,9 +135,7 @@ struct ChildDetailView: View {
                             gridButtonContent(icon: "mappin.and.ellipse", title: "Zones Setup", color: Color("ColorRed"))
                         }
                         
-                        NavigationLink(destination: ZoneAlertSimulation(childID: child.id)) {
-                            gridButtonContent(icon: "map.circle", title: "Zones Alert Test", color: Color("ColorYellow"))
-                        }
+                       
                     }
                     .padding()
                 }

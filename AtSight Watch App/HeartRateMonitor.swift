@@ -3,24 +3,61 @@
 //  AtSight Watch App
 //
 //  Created by Leena on 22/10/2025.
-//  Updated: Added guardianId + field alignment with API
+//  Simplified: motion + missing-HR off-wrist heuristic, stale filtering, clean IDs
 //
 
 import Foundation
 import HealthKit
+import CoreMotion
 
 final class HeartRateMonitor: NSObject {
     static let shared = HeartRateMonitor()
+
     private let healthStore = HKHealthStore()
+    private let motionManager = CMMotionManager()
+
     private var query: HKObserverQuery?
-    private var lastBPM: Double = 0
     private var timer: Timer?
+
+    // Last known heart rate + time
+    private var lastBPM: Double = 0
     private var lastUpdateTime: TimeInterval = 0
+
+    // Motion + alert throttling
+    private var lastSignificantMotionTime: TimeInterval = 0
     private var lastAlertTime: TimeInterval = 0
+
+    // Off-wrist / back-on state
+    private var isLikelyOffWrist = false
+    private var backOnCandidateCount = 0
+
+    // Heuristic thresholds
+    private let maxSampleAge: TimeInterval = 15           // ignore HR older than this (seconds)
+    private let noHRThreshold: TimeInterval = 120         // no HR for ≥ 2 min
+    private let motionQuietThreshold: TimeInterval = 300  // no motion for ≥ 5 min (strong case)
+    private let longMotionQuietThreshold: TimeInterval = 60 // no motion for ≥ 1 min (fallback / debug)
+    private let alertCooldown: TimeInterval = 120         // don’t spam alerts more than once per 2 min
+
+    // Back-on heuristics
+    private let backOnRequiredSamples = 3                 // how many good samples in a row
+    private let backOnMaxSampleAge: TimeInterval = 8      // HR sample must be this fresh
+    private let backOnMotionWindow: TimeInterval = 20     // motion must be recent within this window (seconds)
 
     private override init() {}
 
-    // MARK: - Start Monitoring
+    // MARK: - ID helpers
+
+    private func currentGuardianId() -> String {
+        // Use ONE canonical key for guardian ID everywhere
+        return UserDefaults.standard.string(forKey: "guardianId") ?? "unknown"
+    }
+
+    private func currentChildId() -> String {
+        return UserDefaults.standard.string(forKey: "currentChildId") ?? "unknown"
+    }
+
+    // MARK: - Start / Stop
+
     func startMonitoring(for childName: String) {
         guard HKHealthStore.isHealthDataAvailable() else {
             print("❤️ Health data not available on this device")
@@ -32,6 +69,7 @@ final class HeartRateMonitor: NSObject {
             if success {
                 DispatchQueue.main.async {
                     self.startQuery(type: type, childName: childName)
+                    self.startMotionUpdates()
                 }
             } else {
                 print("❌ HeartRate authorization failed:", error?.localizedDescription ?? "unknown")
@@ -39,77 +77,237 @@ final class HeartRateMonitor: NSObject {
         }
     }
 
-    // MARK: - Stop Monitoring
     func stopMonitoring() {
         timer?.invalidate()
         timer = nil
-        if let q = query { healthStore.stop(q) }
+
+        if let q = query {
+            healthStore.stop(q)
+        }
+
+        motionManager.stopAccelerometerUpdates()
+
+        // Reset state
+        isLikelyOffWrist = false
+        backOnCandidateCount = 0
+        lastBPM = 0
+        lastUpdateTime = 0
+
         print("🛑 HeartRateMonitor stopped")
     }
 
     // MARK: - Query setup
+
     private func startQuery(type: HKQuantityType, childName: String) {
         query = HKObserverQuery(sampleType: type, predicate: nil) { [weak self] _, completion, error in
-            guard let self = self else { return }
-            if let error = error {
-                print("❌ HeartRate observer error:", error.localizedDescription)
+            guard let self = self else {
+                completion()
                 return
             }
+
+            if let error = error {
+                print("❌ HeartRate observer error:", error.localizedDescription)
+                completion()
+                return
+            }
+
             self.fetchLatestHeartRate(for: type, childName: childName)
             completion()
         }
-        if let q = query { healthStore.execute(q) }
 
-        // Timer → if no updates for 2 min, assume watch removed
-        timer = Timer.scheduledTimer(withTimeInterval: 120, repeats: true) { [weak self] _ in
-            guard let self = self else { return }
-            let now = Date().timeIntervalSince1970
-
-            if UserDefaults.standard.bool(forKey: "stopHeartRateMonitoring") {
-                print("🧩 [HRM] Parent acknowledged, skipping alerts")
-                return
-            }
-
-            if now - self.lastUpdateTime > 120 {
-                self.notifyWatchRemoved(childName: childName)
-            }
+        if let q = query {
+            healthStore.execute(q)
         }
+
+        // Periodically check for off-wrist based on motion + HR recency
+        timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
+            self.evaluateOffWristIfNeeded(now: Date(), childName: childName)
+        }
+
+        // Initialize so we don’t immediately think it's quiet
+        let nowTs = Date().timeIntervalSince1970
+        lastSignificantMotionTime = nowTs
+        lastUpdateTime = 0  // no sample yet
+        isLikelyOffWrist = false
+        backOnCandidateCount = 0
 
         print("❤️ HeartRateMonitor started for \(childName)")
     }
 
-    // MARK: - Fetch latest sample
-    private func fetchLatestHeartRate(for type: HKQuantityType, childName: String) {
-        let sort = NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: false)
-        let query = HKSampleQuery(sampleType: type, predicate: nil, limit: 1, sortDescriptors: [sort]) { [weak self] _, samples, error in
+    // MARK: - Motion tracking
+
+    private func startMotionUpdates() {
+        guard motionManager.isAccelerometerAvailable else {
+            print("⚠️ Accelerometer not available, motion-based off-wrist detection disabled")
+            return
+        }
+
+        motionManager.accelerometerUpdateInterval = 1.0 // 1 Hz is enough
+
+        motionManager.startAccelerometerUpdates(to: .main) { [weak self] data, error in
             guard let self = self else { return }
-            if let hrSample = samples?.first as? HKQuantitySample {
-                let bpm = hrSample.quantity.doubleValue(for: HKUnit(from: "count/min"))
-                self.lastBPM = bpm
-                self.lastUpdateTime = Date().timeIntervalSince1970
-                print("❤️ Current BPM: \(bpm)")
 
-                self.sendHeartRateToAPI(bpm: bpm, childName: childName)
+            if let error = error {
+                print("❌ Accelerometer error:", error.localizedDescription)
+                return
+            }
 
-                if bpm < 20 {
-                    let now = Date().timeIntervalSince1970
-                    if now - self.lastAlertTime > 120 {
-                        self.lastAlertTime = now
-                        self.notifyWatchRemoved(childName: childName)
-                    }
-                } else {
-                    UserDefaults.standard.set(false, forKey: "stopHeartRateMonitoring")
-                    print("✅ Watch worn again — monitoring resumed")
-                }
+            guard let accel = data?.acceleration else { return }
+
+            // Magnitude of acceleration vector
+            let magnitude = sqrt(accel.x * accel.x + accel.y * accel.y + accel.z * accel.z)
+
+            // Around 1.0 when stationary. Deviation indicates movement.
+            let deltaFrom1g = fabs(magnitude - 1.0)
+
+            if deltaFrom1g > 0.1 {
+                lastSignificantMotionTime = Date().timeIntervalSince1970
             }
         }
+
+        print("📡 Motion monitoring started for off-wrist heuristic")
+    }
+
+    // MARK: - Fetch latest HR sample
+
+    private func fetchLatestHeartRate(for type: HKQuantityType, childName: String) {
+        let sort = NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: false)
+        let query = HKSampleQuery(
+            sampleType: type,
+            predicate: nil,
+            limit: 1,
+            sortDescriptors: [sort]
+        ) { [weak self] _, samples, error in
+            guard let self = self else { return }
+
+            if let error = error {
+                print("❌ HeartRate sample query error:", error.localizedDescription)
+                return
+            }
+
+            guard let hrSample = samples?.first as? HKQuantitySample else { return }
+
+            let now = Date()
+            let sampleAge = now.timeIntervalSince(hrSample.endDate)
+
+            // Ignore very old samples
+            guard sampleAge < self.maxSampleAge else {
+                print("⚠️ Ignoring stale HR sample (age: \(sampleAge)s)")
+                return
+            }
+
+            let bpm = hrSample.quantity.doubleValue(for: HKUnit(from: "count/min"))
+
+            // Very basic sanity check
+            guard bpm > 0, bpm < 240 else {
+                print("⚠️ Ignoring implausible BPM:", bpm)
+                return
+            }
+
+            self.lastBPM = bpm
+            self.lastUpdateTime = now.timeIntervalSince1970
+
+            print("❤️ Current BPM: \(bpm) (age: \(sampleAge)s)")
+            self.sendHeartRateToAPI(bpm: bpm, childName: childName)
+
+            // Evaluate if this HR + motion combo suggests the watch is back on wrist
+            self.evaluateBackOnIfNeeded(sampleAge: sampleAge, now: now, childName: childName)
+        }
+
         healthStore.execute(query)
     }
 
-    // MARK: - Send to API
+    // MARK: - Off-wrist heuristic (simple & explainable)
+
+    private func evaluateOffWristIfNeeded(now: Date, childName: String) {
+        if UserDefaults.standard.bool(forKey: "stopHeartRateMonitoring") {
+            print("🧩 [HRM] Parent acknowledged, skipping off-wrist alerts")
+            return
+        }
+
+        let nowTs = now.timeIntervalSince1970
+
+        // If we never received a valid HR sample yet, do nothing
+        guard lastUpdateTime > 0 else {
+            print("🧪 [HRM] No HR yet, skip off-wrist check")
+            return
+        }
+
+        let secondsSinceHR = nowTs - lastUpdateTime
+        let secondsSinceMotion = nowTs - lastSignificantMotionTime
+
+        // Strong case: no HR + no motion
+        let hrIsStale = secondsSinceHR > noHRThreshold                    // e.g. > 2 min
+        let motionIsVeryLow = secondsSinceMotion > motionQuietThreshold   // e.g. > 5 min
+
+        // Fallback: long period with no motion, even if HR keeps coming
+        let longMotionQuiet = secondsSinceMotion > longMotionQuietThreshold // e.g. > 1 min
+
+        print("🧪 [HRM] Off-wrist check → sinceHR=\(secondsSinceHR)s, sinceMotion=\(secondsSinceMotion)s, hrIsStale=\(hrIsStale), motionLow=\(motionIsVeryLow), longQuiet=\(longMotionQuiet)")
+
+        let shouldTrigger =
+            (hrIsStale && motionIsVeryLow) ||  // strong case
+            longMotionQuiet                    // fallback case
+
+        guard shouldTrigger else { return }
+
+        // Throttle alerts
+        if nowTs - lastAlertTime < alertCooldown {
+            print("⏱ [HRM] Off-wrist condition met but in cooldown")
+            return
+        }
+
+        // Only transition once into off-wrist state
+        if !isLikelyOffWrist {
+            isLikelyOffWrist = true
+            backOnCandidateCount = 0
+
+            lastAlertTime = nowTs
+            print("🚨 [HRM] Off-wrist condition met → sending watch_removed event")
+            notifyWatchRemoved(childName: childName)
+        } else {
+            print("🔁 [HRM] Still off-wrist, not sending duplicate alert")
+        }
+    }
+
+    // MARK: - Back-on heuristic
+
+    private func evaluateBackOnIfNeeded(sampleAge: TimeInterval, now: Date, childName: String) {
+        // Only care if we previously decided it's off-wrist
+        guard isLikelyOffWrist else { return }
+
+        let nowTs = now.timeIntervalSince1970
+        let secondsSinceMotion = nowTs - lastSignificantMotionTime
+
+        let hasRecentMotion = secondsSinceMotion < backOnMotionWindow
+        let sampleIsFresh = sampleAge < backOnMaxSampleAge
+
+        if hasRecentMotion && sampleIsFresh {
+            backOnCandidateCount += 1
+            print("🧪 [HRM] Back-on candidate \(backOnCandidateCount)/\(backOnRequiredSamples) (motion \(secondsSinceMotion)s ago)")
+        } else {
+            if backOnCandidateCount != 0 {
+                print("↩️ [HRM] Back-on candidate reset (motion or sample age not good enough)")
+            }
+            backOnCandidateCount = 0
+        }
+
+        guard backOnCandidateCount >= backOnRequiredSamples else { return }
+
+        // Confirmed: watch is likely back on wrist
+        isLikelyOffWrist = false
+        backOnCandidateCount = 0
+
+        print("✅ [HRM] Watch likely back on wrist (HR + motion stable)")
+        notifyWatchBackOn(childName: childName)
+    }
+
+    // MARK: - Send HR to API
+
     private func sendHeartRateToAPI(bpm: Double, childName: String) {
-        let childId = UserDefaults.standard.string(forKey: "currentChildId") ?? "unknown"
-        let guardianId = UserDefaults.standard.string(forKey: "guardianId") ?? "unknown"
+        let childId = currentChildId()
+        let guardianId = currentGuardianId()
 
         let payload: [String: Any] = [
             "guardianId": guardianId,
@@ -123,24 +321,49 @@ final class HeartRateMonitor: NSObject {
         print("📤 [HRM] Sent heart rate via API:", payload)
     }
 
-    // MARK: - Watch removed notifier (API)
+    // MARK: - Watch removed notifier
+
     private func notifyWatchRemoved(childName: String) {
         if UserDefaults.standard.bool(forKey: "stopHeartRateMonitoring") {
             print("🚫 [HRM] Parent acknowledged, not sending duplicate alert")
             return
         }
 
-        let guardianId = UserDefaults.standard.string(forKey: "currentGuardianId") ?? "unknown"
-        let childId = UserDefaults.standard.string(forKey: "currentChildId") ?? "unknown"
+        let guardianId = currentGuardianId()
+        let childId = currentChildId()
 
         let payload: [String: Any] = [
             "guardianId": guardianId,
             "childId": childId,
+            "childName": childName,
             "event": "watch_removed",
             "ts": Date().timeIntervalSince1970
         ]
 
         APIHelper.shared.post(to: API.uploadHeartRate, body: payload)
         print("🚨 [HRM] Watch likely removed — sent via API:", payload)
+    }
+
+    // MARK: - Watch back-on notifier (optional for parent app)
+
+    private func notifyWatchBackOn(childName: String) {
+        if UserDefaults.standard.bool(forKey: "stopHeartRateMonitoring") {
+            print("🚫 [HRM] Parent acknowledged, skipping watch_back_on event")
+            return
+        }
+
+        let guardianId = currentGuardianId()
+        let childId = currentChildId()
+
+        let payload: [String: Any] = [
+            "guardianId": guardianId,
+            "childId": childId,
+            "childName": childName,
+            "event": "watch_back_on",
+            "ts": Date().timeIntervalSince1970
+        ]
+
+        APIHelper.shared.post(to: API.uploadHeartRate, body: payload)
+        print("✅ [HRM] Watch likely back on — sent via API:", payload)
     }
 }

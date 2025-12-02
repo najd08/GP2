@@ -1,6 +1,3 @@
-
-//Added low battery alert event handle ✅
-
 import SwiftUI
 import Firebase
 import FirebaseFirestore
@@ -13,52 +10,160 @@ struct NotificationItem: Identifiable {
     var body: String
     var timestamp: Timestamp
     var isSafeZone: Bool? // value is optional
-    var event: String? // ✅ added to handle "watch_removed" type
+    var event: String?    // event type: watch_removed, battery_low, sos_alert, etc.
+    
+    // Optional metadata (if you ever save them in Firestore for notifications)
+    var childName: String?
+    var zoneName: String?
 }
 
 //MARK: - extensions:
 extension NotificationItem {
     
-    // Determines the color based on the isSafeZone state or event type.
+    // MARK: Helpers
+    
+    // Voice message detector
+    private var isVoiceMessage: Bool {
+        if let event = event,
+           event == "voice_message" || event == "voice" || event == "new_voice_message" {
+            return true
+        }
+        let lower = title.lowercased()
+        return lower.contains("voice message") || lower.contains("new voice")
+    }
+    
+    // Zone alert detector (geofence events written earlier)
+    var isZoneAlert: Bool {
+        return isSafeZone != nil && (event == nil || event == "zone_alert")
+    }
+    
+    // Simple helper to grab text between two markers
+    private func extractBetween(_ text: String, start: String, end: String) -> String? {
+        guard let startRange = text.range(of: start) else { return nil }
+        let substringFromStart = text[startRange.upperBound...]
+        guard let endRange = substringFromStart.range(of: end) else { return nil }
+        let result = substringFromStart[..<endRange.lowerBound]
+        let trimmed = result.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : String(trimmed)
+    }
+    
+    // Try to get child's name either from Firestore field or from the original title
+    private var childLabel: String {
+        if let childName = childName, !childName.isEmpty {
+            return childName
+        }
+        if let parsed = extractBetween(title, start: "Child '", end: "'") {
+            return parsed
+        }
+        return "Child"
+    }
+    
+    // Try to get zone name either from Firestore field or from the original title
+    private var zoneLabel: String {
+        if let zoneName = zoneName, !zoneName.isEmpty {
+            return zoneName
+        }
+        if let parsed = extractBetween(title, start: "zone: '", end: "'") {
+            return parsed
+        }
+        return "Zone"
+    }
+    
+    // Shorter, prettier title just for UI (but keep child & zone name)
+    var displayTitle: String {
+        guard isZoneAlert else { return title }
+        
+        let lower = title.lowercased()
+        if lower.contains("entered the danger zone") {
+            return "\(childLabel) entered '\(zoneLabel)' zone"
+        } else if lower.contains("exited the safe zone") {
+            return "\(childLabel) left '\(zoneLabel)' zone"
+        } else {
+            return "\(childLabel) - \(zoneLabel) alert"
+        }
+    }
+    
+    // Shorter, cleaner body for zone alerts
+    var displayBody: String {
+        guard isZoneAlert else { return body }
+        
+        var text = body
+        if text.hasPrefix("Info: ") {
+            text = String(text.dropFirst("Info: ".count))
+        }
+        return text
+    }
+    
+    // MARK: Colors & Icons
+    
     var indicatorColor: Color {
-        // EDIT BY RIYAM: Added 'battery_low' to red color condition
-        if event == "watch_removed" || event == "battery_low" {
-            return Color("ColorRed") // ✅ red for lost heart rate or low battery
+        // 🔊 Voice message (info, not danger)
+        if isVoiceMessage {
+            return Color("ColorBlue")
         }
-        // Handle SOS Alert event
-        if event == "sos_alert" {
-            return Color("ColorRed")
+        
+        if let event = event {
+            switch event {
+            case "watch_removed":
+                return Color("ColorRed")          // watch off wrist = danger
+            case "battery_low":
+                return Color("ColorOrange")       // low battery
+            case "sos_alert":
+                return Color("ColorRed")          // SOS = strong danger
+            case "halt_alert":
+                return Color("ColorYellow")       // HALT = important attention
+            case "connection_request":
+                return Color("ColorBlue")         // connection/relationship type
+            default:
+                break
+            }
         }
-        guard let isSafe = isSafeZone else {
-            // This is the color for neutral notifications (isSafeZone is nil).
-            return Color("ColorGray")
+        
+        // Fallback to zone-based logic if event not set
+        if let isSafe = isSafeZone {
+            // Yellow for safe zone exits (true), Red for danger zone entries (false).
+            return isSafe ? Color("ColorYellow") : Color("ColorRed")
         }
-        // Yellow for safe zone exits (true), Red for danger zone entries (false).
-        return isSafe ? Color("ColorYellow") : Color("ColorRed")
+        
+        // Neutral but NOT gray (for generic notifications)
+        return Color("ColorBlue")
     }
     
-    // Determines the background color.
+    // Kept in case you want it; not used directly in row now.
     var backgroundColor: Color {
-        return indicatorColor.opacity(0.1)
+        indicatorColor.opacity(0.1)
     }
     
-    // Determines which icon to show.
     var iconName: String {
-        if event == "watch_removed" {
-            return "heart.slash" // ✅ distinct icon for watch removed
+        // 🔊 Voice message icon
+        if isVoiceMessage {
+            return "waveform"
         }
-        // EDIT BY RIYAM: Added specific icon for low battery
-        if event == "battery_low" {
-            return "exclamationmark.triangle"
+        
+        if let event = event {
+            switch event {
+            case "watch_removed":
+                return "heart.slash"
+            case "battery_low":
+                return "battery.25"
+            case "sos_alert":
+                return "sos"
+            case "halt_alert":
+                return "hand.raised.fill"
+            case "connection_request":
+                return "person.2.wave.2.fill"
+            default:
+                break
+            }
         }
-        guard isSafeZone != nil else {
-            // A neutral icon for adding a child or other non-zone alerts.
+        
+        if isSafeZone == nil {
             return "person.badge.plus"
         }
-        // The alert icon for zone-related notifications.
         return "exclamationmark.triangle"
     }
 }
+
 
 //MARK: - Page view:
 struct NotificationsHistory: View {
@@ -66,74 +171,35 @@ struct NotificationsHistory: View {
     @State private var isLoading = true
 
     // DATE FORMATTER
-    private var dateFormatter: DateFormatter {
+    private let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
-        formatter.dateStyle = .short
-        formatter.timeStyle = .short
+        formatter.dateFormat = "d MMM, h:mm a"
         return formatter
-    }
+    }()
+
     
     var body: some View {
         NavigationView {
             ScrollView {
-                VStack(spacing: 16) {
+                VStack(spacing: 10) {
                     if isLoading {
                         ProgressView("Loading...")
                             .padding(.top, 50)
                             .foregroundColor(Color("BlackFont"))
                     } else if notifications.isEmpty {
                         Text("No notifications available.")
-                            .foregroundColor(Color("ColorGray"))
+                            .foregroundColor(Color("NotificationBody"))
                             .padding(.top, 50)
                     } else {
                         ForEach(notifications) { notification in
-                            HStack(alignment: .top, spacing: 12) {
-                                Image(systemName: "bell.fill")
-                                    .foregroundColor(Color("BlackFont"))
-                                    .padding(.top, 6)
-
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(notification.title)
-                                        .font(.headline)
-                                        .foregroundColor(Color("BlackFont"))
-
-                                    Text(notification.body)
-                                        .font(.subheadline)
-                                        .foregroundColor(Color("NotificationBody"))
-                                        .fixedSize(horizontal: false, vertical: true)
-                                    
-                                    // Display notification date and time.
-                                        Text(dateFormatter.string(from: notification.timestamp.dateValue()))
-                                            .font(.subheadline)
-                                            .foregroundColor(.gray)
-                                            .padding(.top, 2) // Add a little space
-                                }
-
-                                Spacer()
-
-                                ZStack {
-                                    RoundedRectangle(cornerRadius: 10)
-                                        .stroke(notification.indicatorColor, lineWidth: 2)
-                                        .frame(width: 34, height: 34)
-
-                                    Image(systemName: notification.iconName)
-                                        .foregroundColor(notification.indicatorColor)
-                                        .font(.system(size: 18))
-                                }
-                            }
-                            .padding()
-                            .background(notification.backgroundColor)
-                            .cornerRadius(20)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 20)
-                                    .stroke(notification.indicatorColor, lineWidth: 1.5)
+                            NotificationRow(
+                                notification: notification,
+                                dateText: dateFormatter.string(from: notification.timestamp.dateValue())
                             )
-                            .shadow(color: Color.black.opacity(0.1), radius: 6, x: 0, y: 4)
-                            .padding(.horizontal, 16)
                         }
                     }
                 }
-                .padding(.top)
+                .padding(.top, 12)
                 .frame(maxWidth: .infinity)
             }
             .background(Color("BgColor").ignoresSafeArea())
@@ -169,7 +235,9 @@ struct NotificationsHistory: View {
                             body: data["body"] as? String ?? "",
                             timestamp: data["timestamp"] as? Timestamp ?? Timestamp(date: Date()),
                             isSafeZone: data["isSafeZone"] as? Bool,
-                            event: data["event"] as? String // ✅ safely map new field
+                            event: data["event"] as? String,
+                            childName: data["childName"] as? String,
+                            zoneName: data["zoneName"] as? String
                         )
                     } ?? []
                     self.isLoading = false
@@ -177,6 +245,73 @@ struct NotificationsHistory: View {
             }
     }
 }
+
+// MARK: - Single Row (modern tinted card)
+struct NotificationRow: View {
+    let notification: NotificationItem
+    let dateText: String
+
+    var body: some View {
+        HStack {
+            ZStack {
+                // Card background – subtle tinted
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(notification.indicatorColor.opacity(0.10))
+
+                // Very light border
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(notification.indicatorColor.opacity(0.45), lineWidth: 1)
+
+                HStack(alignment: .top, spacing: 14) {
+
+                    // Icon (bigger & more relaxed)
+                    ZStack {
+                        Circle()
+                            .fill(notification.indicatorColor)
+                            .frame(width: 40, height: 40)
+
+                        Image(systemName: notification.iconName)
+                            .foregroundColor(.white)
+                            .font(.system(size: 18, weight: .semibold))
+                    }
+                    .padding(.top, 2)
+
+                    // Texts
+                    VStack(alignment: .leading, spacing: 6) {
+
+                        // Title + Date on right
+                        HStack(alignment: .firstTextBaseline) {
+                            Text(notification.displayTitle)
+                                .font(.system(size: 16, weight: .medium))  // smaller & calmer
+                                .foregroundColor(Color("BlackFont"))
+                                .lineLimit(2)
+
+                            Spacer(minLength: 6)
+
+                            Text(dateText)
+                                .font(.system(size: 13))
+                                .foregroundColor(Color("NotificationBody"))
+                                .lineLimit(1)
+                        }
+
+                        Text(notification.displayBody)
+                            .font(.system(size: 14))
+                            .foregroundColor(Color("NotificationBody"))
+                            .fixedSize(horizontal: false, vertical: true)
+                            .lineSpacing(1.5)
+                    }
+
+                    Spacer(minLength: 0)
+                }
+                .padding(.vertical, 12)
+                .padding(.horizontal, 14)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.bottom, 6) // <- more space between cards
+    }
+}
+
 
 #Preview {
     NotificationsHistory()
