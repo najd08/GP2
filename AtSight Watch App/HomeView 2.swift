@@ -132,16 +132,20 @@ struct HomeView_Watch: View {
                         NavigationLink(destination: PairingView()) {
                             HStack(spacing: 4) {
                                 Image(systemName: "person.badge.plus")
-                                    .font(.system(size: 14))
-                                Text("  Link  ")
-                                    .font(.system(size: 12, weight: .medium))
+                                    .font(.system(size: 12))
+
+                                Text("Pairing Code")
+                                    .font(.system(size: 11, weight: .medium))
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.7)
                             }
                             .foregroundColor(brandBlue)
-                            .padding(.vertical, 4)
-                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .padding(.horizontal, 6)
                             .background(Capsule().fill(buttons.opacity(0.2)))
                         }
                         .buttonStyle(.plain)
+
                     }
                     .padding(.horizontal, 12)
                     .padding(.bottom, 8)
