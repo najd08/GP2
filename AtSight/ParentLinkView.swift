@@ -2,15 +2,14 @@
 //  ParentLinkView.swift
 //  AtSight
 //
-//  Updated: Shows "Linked Successfully" screen on success.
-//  Updated: Checks for invalid PIN before sending request.
-//
 
 import SwiftUI
 import FirebaseAuth
 import FirebaseFirestore
+import CodeScanner
 
 struct ParentLinkView: View {
+
     let childId: String
     let childName: String
     let parentName: String
@@ -19,228 +18,321 @@ struct ParentLinkView: View {
 
     @State private var code = ""
     @State private var status = "Enter the 6-digit code shown on the watch"
-    
-    // UI States
+
     @State private var isSending = false
     @State private var isWaitingForApproval = false
-    @State private var showSuccess = false // ✅ New Success State
-    
-    // Listener for real-time updates
+    @State private var showSuccess = false
+
+    @State private var isShowingScanner = false
+    @State private var showManualPinSheet = false
+    @State private var showInvalidQRAlert = false
+
     @State private var listener: ListenerRegistration?
 
     private var digitsOnly: String { code.filter { $0.isNumber } }
     private var isValidCode: Bool { digitsOnly.count == 6 }
 
     var body: some View {
-        VStack(spacing: 20) {
-            
+
+        ZStack {
+
+            // ============================
+            // SUCCESS SCREEN
+            // ============================
             if showSuccess {
-                // MARK: - Success UI (Linked Successfully)
                 VStack(spacing: 20) {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 80))
-                        .foregroundColor(.green)
-                        .transition(.scale.combined(with: .opacity))
-                    
+                        .foregroundColor(.white)
+
                     Text("Linked Successfully")
                         .font(.title)
                         .bold()
                         .foregroundColor(Color("BlackFont"))
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                
-            } else if isWaitingForApproval {
-                // MARK: - Waiting UI
+            }
+
+            // ============================
+            // WAITING FOR APPROVAL
+            // ============================
+            else if isWaitingForApproval {
                 VStack(spacing: 20) {
-                    ProgressView()
-                        .scaleEffect(1.5)
-                        .padding()
-                    
+                    ProgressView().scaleEffect(1.5)
+
                     Text("Request Sent")
-                        .font(.title2)
-                        .bold()
-                    
-                    Text("Waiting for the main guardian to approve your request... Please keep this page open...")
-                        .multilineTextAlignment(.center)
+                        .font(.title2).bold()
+
+                    Text("Waiting for the main guardian to approve your request...\nPlease keep this page open.")
                         .foregroundColor(.gray)
-                        .padding(.horizontal)
-                    
-                    Button("Cancel Request") {
-                        cancelRequest()
-                    }
-                    .foregroundColor(.red)
-                    .padding(.top)
-                }
-            } else {
-                // MARK: - Entry UI
-                Text("Link Watch")
-                    .font(.largeTitle)
-                    .bold()
-                    .padding(.top)
-                
-                Text("Enter the code displayed on \(childName)'s watch.")
-                    .multilineTextAlignment(.center)
-                    .foregroundColor(.gray)
-                    .padding(.horizontal)
+                        .multilineTextAlignment(.center)
 
-                TextField("123456", text: $code)
-                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                    .keyboardType(.numberPad)
-                    .font(.system(size: 24, weight: .bold, design: .monospaced))
-                    .multilineTextAlignment(.center)
-                    .frame(width: 200)
-                    .padding(.vertical)
-                    .onChange(of: code) { newValue in
-                        let trimmed = newValue.filter { $0.isNumber }
-                        if trimmed.count > 6 {
-                            code = String(trimmed.prefix(6))
-                        } else {
-                            code = trimmed
+                    Button("Cancel Request") { cancelRequest() }
+                        .foregroundColor(.red)
+                }
+            }
+
+            // ============================
+            // SCANNER SCREEN
+            // ============================
+            else if isShowingScanner {
+
+                ZStack {
+                    Color("BgColor").ignoresSafeArea()
+
+                    VStack {
+
+                        // BACK BUTTON
+                        HStack {
+                            Button {
+                                dismiss()
+                            } label: {
+                                Image(systemName: "chevron.left")
+                                    .font(.system(size: 24, weight: .bold))
+                                    .foregroundColor(Color("BlackFont"))
+                                    .padding()
+                            }
+                            Spacer()
                         }
-                    }
 
-                Button {
-                    sendLinkCode()
-                } label: {
-                    HStack(spacing: 8) {
-                        if isSending { ProgressView().tint(.white) }
-                        Text("Link")
-                            .bold()
+                        Text("Scan QR Code")
+                            .font(.largeTitle).bold()
+                            .foregroundColor(Color("button"))
+
+                        Text("Point your camera at the watch.")
+                            .foregroundColor(Color("button"))
+
+                        Spacer()
+
+                        CodeScannerView(
+                            codeTypes: [.qr],
+                            scanMode: .continuous,
+                            showViewfinder: true
+                        ) { result in
+                            switch result {
+                            case .success(let scanned):
+                                isShowingScanner = false
+                                handleScan(result: scanned.string)
+                            case .failure:
+                                showInvalidQRAlert = true
+                            }
+                        }
+                        .frame(width: 350, height: 350)
+                        .cornerRadius(22)
+
+                        Spacer()
+
+                        // MANUAL PIN BUTTON
+                        Button {
+                            showManualPinSheet = true
+                        } label: {
+                            Text("Enter PIN manually")
+                                .foregroundColor(.white)
+                                .font(.headline)
+                                .padding(.vertical, 14)
+                                .padding(.horizontal, 40)
+                                .background(Color("button"))
+                                .cornerRadius(30)
+                        }
+                        .padding(.bottom, 40)
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(isValidCode ? Color.blue : Color.gray)
-                    .foregroundColor(.white)
-                    .cornerRadius(12)
                 }
-                .disabled(!isValidCode || isSending)
-                .padding(.horizontal)
+            }
 
-                Text(status)
-                    .font(.footnote)
-                    .foregroundColor(status.contains("Failed") || status.contains("Invalid") || status.contains("Rejected") ? .red : .gray)
-                    .multilineTextAlignment(.center)
-                    .padding(.top, 10)
+            // ============================
+            // REMOVE DEFAULT PAGE → Always open scanner
+            // ============================
+            else {
+                // مباشرة افتح شاشة الكاميرا، بدون أي UI إضافي
+                Color.clear.onAppear { isShowingScanner = true }
             }
         }
-        .padding()
-        .animation(.easeInOut, value: showSuccess) // Smooth transition
-        .animation(.easeInOut, value: isWaitingForApproval)
-        .onDisappear {
-            // Clean up listener when view closes
-            listener?.remove()
+
+        // INVALID QR ALERT
+        .alert("Invalid QR Code", isPresented: $showInvalidQRAlert) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text("This QR code does not match the expected format.")
+        }
+
+        // MANUAL PIN SHEET
+        .sheet(isPresented: $showManualPinSheet) {
+            manualPinEntrySection.padding()
+        }
+
+        .navigationBarBackButtonHidden(true)
+        .onDisappear { listener?.remove() }
+    }
+
+    // ===========================================
+    // MANUAL PIN VIEW
+    // ===========================================
+    private var manualPinEntrySection: some View {
+
+        VStack(spacing: 20) {
+
+            Text("Enter the 6-digit PIN")
+                .font(.title3).bold()
+
+            TextField("123456", text: $code)
+                .textFieldStyle(RoundedBorderTextFieldStyle())
+                .keyboardType(.numberPad)
+                .font(.system(size: 26, weight: .bold, design: .monospaced))
+                .multilineTextAlignment(.center)
+                .frame(width: 200)
+                .onChange(of: code) { newValue in
+                    let trimmed = newValue.filter(\.isNumber)
+                    code = trimmed.count > 6 ? String(trimmed.prefix(6)) : trimmed
+                }
+
+            Button {
+                sendLinkCode()
+            } label: {
+                HStack {
+                    if isSending { ProgressView().tint(.white) }
+                    Text("Link").bold()
+                }
+                .frame(maxWidth: .infinity)
+                .padding()
+                .background(isValidCode ? Color("button") : Color.gray)
+                .foregroundColor(.white)
+                .cornerRadius(12)
+            }
+            .disabled(!isValidCode || isSending)
+
+            Text(status)
+                .foregroundColor(status.contains("Invalid") || status.contains("Rejected") ? .red : .gray)
+                .font(.footnote)
+                .multilineTextAlignment(.center)
         }
     }
 
-    // MARK: - 1. Send Request (With Validation)
+    // ===========================================
+    // QR SCAN HANDLER
+    // ===========================================
+    private func handleScan(result: String) {
+
+        let trimmed = result.filter(\.isNumber)
+
+        guard trimmed.count == 6 else {
+            showInvalidQRAlert = true
+            return
+        }
+
+        code = trimmed
+        sendLinkCode()
+    }
+
+    // ===========================================
+    // SEND PIN LOGIC
+    // ===========================================
     private func sendLinkCode() {
-        guard isValidCode else { return }
-        
+        guard isValidCode else {
+            status = "Invalid code length."
+            return
+        }
+
         guard let guardianId = Auth.auth().currentUser?.uid else {
             status = "Error: You must be logged in."
             return
         }
 
         isSending = true
+
         let db = Firestore.firestore()
         let pinCode = digitsOnly
         let docRef = db.collection("pairingCodes").document(pinCode)
-        
-        // 1. CHECK IF PIN EXISTS (Registered by Watch)
+
         docRef.getDocument { snapshot, error in
+
             if let error = error {
-                self.isSending = false
-                self.status = "Error checking PIN: \(error.localizedDescription)"
+                isSending = false
+                status = "Error checking PIN: \(error.localizedDescription)"
                 return
             }
-            
+
             guard let snapshot = snapshot, snapshot.exists else {
-                // ❌ PIN NOT FOUND (Watch hasn't registered it yet)
-                self.isSending = false
-                self.status = "Invalid PIN! Please check the watch and try again."
+                isSending = false
+                showInvalidQRAlert = true
                 return
             }
-            
-            // 2. PIN EXISTS -> Update it with our request
-            let pairingData: [String: Any] = [
+
+            let data: [String: Any] = [
                 "guardianId": guardianId,
                 "childId": childId,
                 "childName": childName,
                 "parentName": parentName,
                 "timestamp": FieldValue.serverTimestamp(),
-                "approvalStatus": "", // Reset to waiting
+                "approvalStatus": "",
                 "notificationSent": false
             ]
-            
-            docRef.updateData(pairingData) { error in
+
+            docRef.updateData(data) { error in
+
                 if let error = error {
-                    self.isSending = false
-                    self.status = "Failed to send request: \(error.localizedDescription)"
+                    isSending = false
+                    status = "Failed to send request: \(error.localizedDescription)"
                     return
                 }
-                
-                // Success -> Start Listening
-                print("✅ PIN verified and request sent. Listening for Admin...")
-                self.isSending = false
-                self.isWaitingForApproval = true
-                self.listenForApproval(pin: pinCode, guardianId: guardianId)
+
+                isSending = false
+                isWaitingForApproval = true
+                listenForApproval(pin: pinCode, guardianId: guardianId)
             }
         }
     }
-    
-    // MARK: - 2. Listen for Approval (The Feedback Loop)
+
+    // ===========================================
+    // FIRESTORE LISTENER
+    // ===========================================
     private func listenForApproval(pin: String, guardianId: String) {
-        let db = Firestore.firestore()
-        
-        listener = db.collection("pairingCodes").document(pin)
-            .addSnapshotListener { snapshot, error in
+
+        listener = Firestore.firestore()
+            .collection("pairingCodes")
+            .document(pin)
+            .addSnapshotListener { snapshot, _ in
+
                 guard let data = snapshot?.data() else { return }
-                
-                // Check the status field updated by the Admin
+
                 if let status = data["approvalStatus"] as? String {
-                    
+
                     if status == "approved" {
-                        // 🎉 Success!
                         handleSuccess(guardianId: guardianId)
                     } else if status == "rejected" {
-                        // ❌ Denied
-                        self.listener?.remove()
-                        self.isWaitingForApproval = false
+                        listener?.remove()
+                        isWaitingForApproval = false
                         self.status = "Connection Rejected by Admin."
                     }
                 }
             }
     }
-    
-    // MARK: - 3. Handle Success UI
+
+    // ===========================================
+    // SUCCESS HANDLER
+    // ===========================================
     private func handleSuccess(guardianId: String) {
-        let db = Firestore.firestore()
-        
-        // 1. Update the child document locally to show it's linked
-        db.collection("guardians").document(guardianId).collection("children").document(childId)
+
+        Firestore.firestore()
+            .collection("guardians")
+            .document(guardianId)
+            .collection("children")
+            .document(childId)
             .updateData(["isWatchLinked": true])
-        
-        // 2. Save local defaults
+
         UserDefaults.standard.set(true, forKey: "linked_\(childId)")
-        
-        // 3. Stop listening
-        self.listener?.remove()
-        
-        // 4. Show Success Message UI
-        withAnimation {
-            self.showSuccess = true
-        }
-        
-        // 5. Dismiss after 2 seconds
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+
+        listener?.remove()
+
+        withAnimation { showSuccess = true }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
             dismiss()
         }
     }
-    
+
     private func cancelRequest() {
         listener?.remove()
         isWaitingForApproval = false
-        // Optional: Delete the document to cancel alert on Admin's phone
         Firestore.firestore().collection("pairingCodes").document(digitsOnly).delete()
     }
 }

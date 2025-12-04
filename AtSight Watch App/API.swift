@@ -14,4 +14,6 @@ enum API {
     // ✅ NEW ENDPOINTS
     static var checkLinkStatus: String { "https://checklinkstatus-7gq4boqq6a-uc.a.run.app" }
     static var syncAuthorizedGuardians: String { "https://syncauthorizedguardians-7gq4boqq6a-uc.a.run.app" }
+    // ✅ NEW: QR Code Generation API
+    static var generateQR: String { "https://generateqr-7gq4boqq6a-uc.a.run.app" }
 }

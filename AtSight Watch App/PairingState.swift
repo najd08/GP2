@@ -3,6 +3,7 @@
 // - Updated addGuardian to handle isAdmin logic.
 // - Updated removeGuardian to clean up admin data.
 // - ADDED: syncGuardiansToCloud() to push the list to Firestore via API.
+// - NEW: Added qrCodeBase64 state property and reset logic.
 
 import Foundation
 import Combine
@@ -14,6 +15,9 @@ final class PairingState: ObservableObject {
     @Published var pin: String = ""
     @Published var linked = false
     @Published var childName: String = ""
+    
+    // ✅ NEW: Property to hold the Base64 QR code string
+    @Published var qrCodeBase64: String? = nil
     
     // ✅ Store names for each guardian ID
     @Published var guardianNames: [String: String] = [:] {
@@ -66,6 +70,8 @@ final class PairingState: ObservableObject {
     func generatePin() {
         pin = String(format: "%06d", Int.random(in: 0..<1_000_000))
         print("🎲 Generated new pairing PIN: \(pin)")
+        // ✅ NEW: Clear QR code state when generating a new PIN
+        qrCodeBase64 = nil
     }
     
     func addGuardian(id: String, name: String, childId: String, isAdmin: Bool) {
