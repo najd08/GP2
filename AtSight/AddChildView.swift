@@ -4,9 +4,9 @@
 //
 //  Created by Najd Alsabi on 22/03/2025.
 //
-//Took Najd's fixed code from WhatsApp. 👤
-//fixed child color problem that made it default to gray (line 267).
-//fixed textfield color for dark mode (line 176). ✅
+// Took Najd's fixed code from WhatsApp. 👤
+// fixed child color problem that made it default to gray (line 267).
+// fixed textfield color for dark mode (line 176). ✅
 
 import SwiftUI
 import FirebaseFirestore
@@ -20,7 +20,7 @@ struct AddChildView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 30) {
-            // Back Button
+            // Back Button (to go back from AddChildView)
             HStack {
                 Button(action: { dismiss() }) {
                     Image(systemName: "chevron.left")
@@ -36,8 +36,7 @@ struct AddChildView: View {
                 .font(.title)
                 .bold()
                 .padding(.horizontal, 5)
-                .padding(.leading,10)
-            
+                .padding(.leading, 10)
 
             // Gender Selection
             VStack(spacing: 70) {
@@ -45,13 +44,17 @@ struct AddChildView: View {
                     gender: "Boy",
                     color: .blue,
                     isSelected: selectedGender == "Boy"
-                ) { selectedGender = "Boy" }
+                ) {
+                    selectedGender = "Boy"
+                }
 
                 GenderOptionView(
                     gender: "Girl",
                     color: .pink,
                     isSelected: selectedGender == "Girl"
-                ) { selectedGender = "Girl" }
+                ) {
+                    selectedGender = "Girl"
+                }
             }
             .frame(maxWidth: .infinity)
             .padding(.horizontal)
@@ -77,9 +80,10 @@ struct AddChildView: View {
             .padding(.bottom, 30)
             .fullScreenCover(isPresented: $showNamePage) {
                 AddChildNameView(
+                    isPresented: $showNamePage,             // 🔹 Binding to control the sheet
                     selectedGender: selectedGender ?? "",
                     fetchChildrenCallback: fetchChildrenCallback,
-                    onFinish: { dismiss() } // ✅ Return to HomeView
+                    onFinish: { dismiss() }                 // 🔹 Close AddChildView → back to Home
                 )
             }
         }
@@ -102,7 +106,8 @@ struct GenderOptionView: View {
                     .frame(width: 100, height: 100)
                     .overlay(
                         Circle()
-                            .stroke(isSelected ? Color.green : Color.clear, lineWidth: 3)
+                            .stroke(isSelected ? Color.green : Color.clear,
+                                    lineWidth: 3)
                     )
 
                 Image(gender)
@@ -130,10 +135,12 @@ struct GenderOptionView: View {
 }
 
 // MARK: - Add Child Name View
+// MARK: - Add Child Name View
 struct AddChildNameView: View {
+    @Binding var isPresented: Bool             // 🔹 Controls the fullScreenCover
     let selectedGender: String
     var fetchChildrenCallback: (() -> Void)?
-    var onFinish: (() -> Void)? // ✅ trigger when done
+    var onFinish: (() -> Void)?             // 🔹 Called after successful submit (to close AddChildView)
 
     @State private var childName = ""
     @State private var isLoading = false
@@ -145,25 +152,25 @@ struct AddChildNameView: View {
         var id: Int { hashValue }
     }
 
-    @Environment(\.dismiss) var dismiss
-
     var body: some View {
         ZStack {
             BubbleBackground(color: selectedGender == "Boy" ? .blue : .pink)
 
             VStack(alignment: .leading, spacing: 30) {
-                // Back Button
+                // Back Button (to go back to gender selection)
                 HStack {
-                    Button(action: { dismiss() }) {
+                    Button(action: {
+                        isPresented = false    // 🔹 Close only the name page
+                    }) {
                         Image(systemName: "chevron.left")
                             .foregroundColor(.primary)
                             .font(.system(size: 22, weight: .medium))
                             .padding(8)
-                            .padding(.top,-65)
+                            // .padding(.top, -65) // ❌ REMOVE: This line pushes the button off-screen
                     }
                     Spacer()
                 }
-                .padding(.top, 70)
+                .padding(.top, 10) // ✅ CHANGED: Reduce top padding to keep the button visible
                 .padding(.horizontal, 10)
 
                 // Title
@@ -174,7 +181,7 @@ struct AddChildNameView: View {
                     .padding(.horizontal)
                     .padding(.top, 10)
                     .padding(.bottom, 20)
-                    .padding(.leading,10)
+                    .padding(.leading, 10)
 
                 // Text Field
                 TextField("Enter name", text: $childName)
@@ -183,9 +190,13 @@ struct AddChildNameView: View {
                     .cornerRadius(20)
                     .overlay(
                         RoundedRectangle(cornerRadius: 20)
-                            .stroke(selectedGender == "Boy" ? Color.blue.opacity(0.5) : Color.pink.opacity(0.5), lineWidth: 2)
+                            .stroke(selectedGender == "Boy"
+                                    ? Color.blue.opacity(0.5)
+                                    : Color.pink.opacity(0.5),
+                                    lineWidth: 2)
                     )
-                    .shadow(color: .gray.opacity(0.15), radius: 3, x: 0, y: 2)
+                    .shadow(color: .gray.opacity(0.15),
+                            radius: 3, x: 0, y: 2)
                     .padding(.horizontal, 40)
 
                 Spacer()
@@ -196,7 +207,9 @@ struct AddChildNameView: View {
                     Button(action: handleSubmit) {
                         if isLoading {
                             ProgressView()
-                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                .progressViewStyle(
+                                    CircularProgressViewStyle(tint: .white)
+                                )
                                 .frame(width: 190, height: 44)
                         } else {
                             Text("Submit")
@@ -206,7 +219,8 @@ struct AddChildNameView: View {
                                 .foregroundColor(.white)
                                 .font(.system(size: 18, weight: .semibold))
                                 .cornerRadius(30)
-                                .shadow(color: .gray.opacity(0.4), radius: 5, x: 0, y: 3)
+                                .shadow(color: .gray.opacity(0.4),
+                                        radius: 5, x: 0, y: 3)
                                 .opacity(childName.isEmpty ? 0.5 : 1.0)
                         }
                     }
@@ -216,7 +230,7 @@ struct AddChildNameView: View {
                 .padding(.bottom, 63)
             }
         }
-        // ✅ Unified alert logic
+        // Alerts
         .alert(item: $alertType) { alert in
             switch alert {
             case .duplicate:
@@ -230,8 +244,10 @@ struct AddChildNameView: View {
                     title: Text("Child Added"),
                     message: Text("\(childName) has been successfully added."),
                     dismissButton: .default(Text("OK")) {
-                        dismiss()       // Close AddChildNameView
-                        onFinish?()     // Close AddChildView → return to Home
+                        // 🔹 Close the name page
+                        isPresented = false
+                        // 🔹 Then close AddChildView (back to Home)
+                        onFinish?()
                     }
                 )
             }
@@ -248,74 +264,80 @@ struct AddChildNameView: View {
         }
 
         let db = Firestore.firestore()
-        let childrenRef = db.collection("guardians").document(guardianID).collection("children")
+        let childrenRef = db.collection("guardians")
+            .document(guardianID)
+            .collection("children")
 
         // Step 1: Check for duplicate name
-        childrenRef.whereField("name", isEqualTo: childName).getDocuments { snapshot, error in
-            if let error = error {
-                print("Error checking duplicates: \(error.localizedDescription)")
-                DispatchQueue.main.async { isLoading = false }
-                return
-            }
-
-            if let documents = snapshot?.documents, !documents.isEmpty {
-                DispatchQueue.main.async {
-                    alertType = .duplicate
-                    isLoading = false
+        childrenRef.whereField("name", isEqualTo: childName)
+            .getDocuments { snapshot, error in
+                if let error = error {
+                    print("Error checking duplicates: \(error.localizedDescription)")
+                    DispatchQueue.main.async { isLoading = false }
+                    return
                 }
-                return
-            }
 
-            // Step 2: Save new child
-            let child = Child(
-                id: UUID().uuidString,
-                name: childName,
-                color: selectedGender == "Boy" ? "blue" : "pink", //fixed colors here to lower case
-                imageData: nil,
-                imageName: nil
-            )
-
-            saveChildToFirestore(guardianID: guardianID, child: child) { result in
-                DispatchQueue.main.async {
-                    switch result {
-                    case .success:
-                        // ✅ Update local child list
-                        fetchChildrenCallback?()
-
-                        // ✅ Create a notification in Firestore
-                        let notificationData: [String: Any] = [
-                            "title": "New Child Added",
-                            "body": "\(child.name) has been successfully added.",
-                            "timestamp": Timestamp(date: Date()),
-                            "event": "child_added"
-                        ]
-
-                        db.collection("guardians")
-                            .document(guardianID)
-                            .collection("notifications")
-                            .addDocument(data: notificationData) { error in
-                                if let error = error {
-                                    print("Error adding notification: \(error.localizedDescription)")
-                                } else {
-                                    print("Notification added successfully.")
-                                }
-                            }
-
-                        // ✅ Show success alert
-                        alertType = .success
-
-                    case .failure(let error):
-                        print("Error saving child: \(error.localizedDescription)")
+                if let documents = snapshot?.documents, !documents.isEmpty {
+                    DispatchQueue.main.async {
+                        alertType = .duplicate
+                        isLoading = false
                     }
-                    isLoading = false
+                    return
+                }
+
+                // Step 2: Save new child
+                let child = Child(
+                    id: UUID().uuidString,
+                    name: childName,
+                    color: selectedGender == "Boy" ? "blue" : "pink", // fixed colors to lower case
+                    imageData: nil,
+                    imageName: nil
+                )
+
+                saveChildToFirestore(guardianID: guardianID, child: child) { result in
+                    DispatchQueue.main.async {
+                        switch result {
+                        case .success:
+                            // Update local child list
+                            fetchChildrenCallback?()
+
+                            // Create a notification in Firestore
+                            let notificationData: [String: Any] = [
+                                "title": "New Child Added",
+                                "body": "\(child.name) has been successfully added.",
+                                "timestamp": Timestamp(date: Date()),
+                                "event": "child_added"
+                            ]
+
+                            db.collection("guardians")
+                                .document(guardianID)
+                                .collection("notifications")
+                                .addDocument(data: notificationData) { error in
+                                    if let error = error {
+                                        print("Error adding notification: \(error.localizedDescription)")
+                                    } else {
+                                        print("Notification added successfully.")
+                                    }
+                                }
+
+                            // Show success alert
+                            alertType = .success
+
+                        case .failure(let error):
+                            print("Error saving child: \(error.localizedDescription)")
+                        }
+                        isLoading = false
+                    }
                 }
             }
-        }
     }
 
-
     // MARK: - Save Helper
-    func saveChildToFirestore(guardianID: String, child: Child, completion: @escaping (Result<Void, Error>) -> Void) {
+    func saveChildToFirestore(
+        guardianID: String,
+        child: Child,
+        completion: @escaping (Result<Void, Error>) -> Void
+    ) {
         let db = Firestore.firestore()
         let data: [String: Any] = [
             "name": child.name,
