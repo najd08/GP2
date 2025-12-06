@@ -4,9 +4,6 @@
 //
 //  Created by Najd Alsabi on 22/03/2025.
 //
-// Took Najd's fixed code from WhatsApp. 👤
-// fixed child color problem that made it default to gray (line 267).
-// fixed textfield color for dark mode (line 176). ✅
 
 import SwiftUI
 import FirebaseFirestore
