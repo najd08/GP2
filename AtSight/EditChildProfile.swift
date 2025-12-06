@@ -9,8 +9,7 @@ import SwiftUI
 import Firebase
 import FirebaseFirestore
 import FirebaseStorage
-import FirebaseAuth // MARK: New import for user authentication
-
+import FirebaseAuth
 
 struct EditChildProfile: View {
     @Environment(\.dismiss) var dismiss
@@ -21,19 +20,38 @@ struct EditChildProfile: View {
     @State private var showingColorPicker = false
     @State private var isSaving = false
     @State private var showSuccessMessage = false
+    @State private var showDeleteSuccessMessage = false
     @State private var showErrorAlert = false
     @State private var errorMessage: String?
     @State private var goToLocationHistory = false
     @State private var isAvatarSelectionVisible = false
     
-    // MARK: New state variables for delete functionality
     // Delete states
     @State private var showDeleteConfirm = false
     @State private var isDeleting = false
     @State private var deleteError: String?
     
+    // Original values to detect changes
+    @State private var originalName: String = ""
+    @State private var originalColor: String = ""
+    @State private var originalImageName: String = ""
+    
     let colors: [Color] = [.red, .green, .blue, .yellow, .orange, .purple, .pink, .brown, .gray]
     let animalIcons = ["penguin", "giraffe", "butterfly", "fox", "deer", "tiger", "whale", "turtle", "owl", "elephant", "frog", "hamster"]
+    
+    private var canSave: Bool {
+        if isSaving || isDeleting { return false }
+        
+        let trimmedName = child.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty else { return false }
+        
+        let originalTrimmed = originalName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let nameChanged = trimmedName != originalTrimmed
+        let colorChanged = child.color != originalColor
+        let imageChanged = (child.imageName ?? "") != originalImageName
+        
+        return nameChanged || colorChanged || imageChanged
+    }
     
     var body: some View {
         ScrollView {
@@ -43,7 +61,7 @@ struct EditChildProfile: View {
                 colorPickerSection
                 navigationLinksSection
                 saveButton
-                deleteButton // MARK: New delete button added to the UI
+                deleteButton
             }
             .padding()
             .foregroundColor(Color("BlackFont"))
@@ -58,15 +76,39 @@ struct EditChildProfile: View {
         }
         .overlay(
             Group {
-                if showSuccessMessage {
-                    Text("Changes Saved!")
-                        .font(.headline)
-                        .foregroundColor(.white)
-                        .padding()
-                        .background(Color.green.opacity(0.8))
-                        .cornerRadius(10)
-                        .transition(.opacity)
-                        .animation(.easeInOut(duration: 0.3), value: showSuccessMessage)
+                if showSuccessMessage || showDeleteSuccessMessage {
+                    ZStack {
+                        Color.black.opacity(0.2).ignoresSafeArea()
+                        
+                        VStack(spacing: 10) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.system(size: 40))
+                                .foregroundColor(.green)
+                            
+                            Text(showDeleteSuccessMessage ? "Child deleted" : "Changes saved")
+                                .font(.headline)
+                                .foregroundColor(Color("BlackFont"))
+                            
+                            Text(
+                                showDeleteSuccessMessage
+                                ? "The child profile has been removed."
+                                : "Your changes have been saved."
+                            )
+                            .font(.subheadline)
+                            .foregroundColor(Color("ColorGray"))
+                        }
+                        .padding(.vertical, 20)
+                        .padding(.horizontal, 24)
+                        .background(
+                            RoundedRectangle(cornerRadius: 18)
+                                .fill(Color("BgColor"))
+                                .shadow(color: .black.opacity(0.2),
+                                        radius: 10, x: 0, y: 4)
+                        )
+                    }
+                    .transition(.opacity)
+                    .animation(.easeInOut(duration: 0.25),
+                               value: showSuccessMessage || showDeleteSuccessMessage)
                 }
             }
         )
@@ -77,7 +119,6 @@ struct EditChildProfile: View {
                 dismissButton: .default(Text("OK"))
             )
         }
-        // MARK: New alerts and overlay for the delete process
         // Confirm delete
         .alert("Delete this child?", isPresented: $showDeleteConfirm) {
             Button("Cancel", role: .cancel) { }
@@ -91,7 +132,7 @@ struct EditChildProfile: View {
         }, message: {
             Text(deleteError ?? "")
         })
-        // Delete overlay
+        // Delete overlay (while deleting)
         .overlay {
             if isDeleting {
                 ZStack {
@@ -108,6 +149,12 @@ struct EditChildProfile: View {
                     )
                 }
             }
+        }
+        // Capture original values once
+        .onAppear {
+            originalName = child.name
+            originalColor = child.color
+            originalImageName = child.imageName ?? ""
         }
     }
     
@@ -143,7 +190,8 @@ struct EditChildProfile: View {
                                 .frame(width: 50, height: 50)
                                 .background(
                                     Circle().fill(child.imageName == iconName ? Color.blue.opacity(0.2) : Color.clear)
-                                ).padding(5)
+                                )
+                                .padding(5)
                                 .clipShape(Circle())
                                 .overlay(Circle().stroke(child.imageName == iconName ? Color.blue : Color.gray.opacity(0.3), lineWidth: 2))
                                 .onTapGesture {
@@ -168,7 +216,7 @@ struct EditChildProfile: View {
                 .foregroundColor(.gray)
             TextField("Enter name", text: $child.name)
                 .textFieldStyle(RoundedBorderTextFieldStyle())
-                .disabled(isSaving || isDeleting) // MARK: Disabled while deleting
+                .disabled(isSaving || isDeleting)
         }
     }
     
@@ -188,7 +236,7 @@ struct EditChildProfile: View {
             }
             .contentShape(Rectangle())
             .onTapGesture {
-                if !isSaving && !isDeleting { // MARK: Disabled while deleting
+                if !isSaving && !isDeleting {
                     withAnimation { showingColorPicker.toggle() }
                 }
             }
@@ -214,7 +262,6 @@ struct EditChildProfile: View {
         }
     }
     
-    // MARK: This navigation section is from the old code.
     // MARK: - Navigation Links
     var navigationLinksSection: some View {
         VStack(spacing: 10) {
@@ -225,66 +272,20 @@ struct EditChildProfile: View {
         .opacity(isSaving ? 0.6 : 1.0)
     }
     
-    //MARK: - commented buttons that were causing issues:
-//    var navigationLinksSection: some View {
-//        VStack(spacing: 12) {
-//            NavigationLink(destination: LocationHistoryView(childID: child.id)) {
-//                Text("View Location History")
-//                    .frame(maxWidth: .infinity)
-//                    .padding()
-//                    .background(Color.blue.opacity(0.1))
-//                    .cornerRadius(8)
-//            }
-//            
-//            NavigationLink(
-//                destination: SavedZonesView(viewModel: ZonesViewModel(childID: child.id))
-//            ) {
-//                Text("Manage Zones")
-//                    .frame(maxWidth: .infinity)
-//                    .padding()
-//                    .background(Color.green.opacity(0.1))
-//                    .cornerRadius(8)
-//            }
-//            
-//            NavigationLink(
-//                destination: AuthorizedPeople()
-//            ) {
-//                Text("Authorized People")
-//                    .frame(maxWidth: .infinity)
-//                    .padding()
-//                    .background(Color.blue.opacity(0.1))
-//                    .cornerRadius(8)
-//            }
-//            
-//            NavigationLink(
-//                destination: CustomizeNotifications(child: $child)
-//            ) {
-//                Text("Customize Notifications")
-//                    .frame(maxWidth: .infinity)
-//                    .padding()
-//                    .background(Color.green.opacity(0.1))
-//                    .cornerRadius(8)
-//            }
-//
-//        }
-//    }
-    
-    // MARK: Save button style and action updated in new code.
-    // MARK: - Save Button
+    // MARK: - Save Button (consistent with EditProfileView)
     var saveButton: some View {
         Button(action: saveChild) {
             Text(isSaving ? "Saving..." : "Save Changes")
-                .bold()
+                .fontWeight(.semibold)
                 .frame(maxWidth: .infinity)
                 .padding()
-                .background(isSaving ? Color.gray : Color.blue)
+                .background(canSave ? Color("Blue") : Color("Blue").opacity(0.4))
                 .foregroundColor(.white)
-                .cornerRadius(8)
+                .cornerRadius(12)
         }
-        .disabled(isSaving || isDeleting)
+        .disabled(!canSave)
     }
     
-    // MARK: New delete button view
     // MARK: - Delete Button
     var deleteButton: some View {
         Button(role: .destructive) {
@@ -301,7 +302,6 @@ struct EditChildProfile: View {
         .disabled(isSaving || isDeleting)
     }
     
-    // MARK: Back button logic updated in new code
     // MARK: - Back Button
     var backButton: some View {
         Button(action: { dismiss() }) {
@@ -314,6 +314,7 @@ struct EditChildProfile: View {
     func saveChild() {
         guard let guardianID = Auth.auth().currentUser?.uid else { return }
         isSaving = true
+        
         let db = Firestore.firestore()
         db.collection("guardians")
             .document(guardianID)
@@ -329,10 +330,15 @@ struct EditChildProfile: View {
                     errorMessage = error.localizedDescription
                     showErrorAlert = true
                 } else {
+                    // ✅ Update original values (now “no change” state)
+                    originalName = child.name
+                    originalColor = child.color
+                    originalImageName = child.imageName ?? ""
+                    
                     withAnimation {
                         showSuccessMessage = true
                     }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
                         withAnimation {
                             showSuccessMessage = false
                         }
@@ -341,11 +347,10 @@ struct EditChildProfile: View {
             }
     }
     
-    // MARK: - Delete Child
+    // MARK: - Delete Child (with centered success message)
     func deleteChild() {
         guard let guardianID = Auth.auth().currentUser?.uid else { return }
         
-        // Capture name and ID before they are dismissed
         let childIDToDelete = child.id
         let childName = child.name
         
@@ -357,14 +362,11 @@ struct EditChildProfile: View {
             .collection("children")
             .document(childIDToDelete)
         
-        // Step 1: Delete the child document
         childRef.delete { error in
             if let error = error {
-                // Handle delete error
                 isDeleting = false
                 deleteError = error.localizedDescription
             } else {
-                // Step 2: On success, create the notification
                 let notificationData: [String: Any] = [
                     "title": "Child Removed",
                     "body": "\(childName) has been successfully deleted.",
@@ -383,14 +385,22 @@ struct EditChildProfile: View {
                         }
                     }
                 
-                // Step 3: Update UI
+                // ✅ Show delete success message, then dismiss
                 isDeleting = false
-                dismiss()
+                withAnimation {
+                    showDeleteSuccessMessage = true
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+                    withAnimation {
+                        showDeleteSuccessMessage = false
+                    }
+                    dismiss()
+                }
             }
         }
     }
-
 }
+
 
 // MARK: These color functions are the simplified versions from the new code
 // MARK: - Color Conversion
