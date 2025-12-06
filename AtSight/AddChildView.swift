@@ -133,21 +133,19 @@ struct GenderOptionView: View {
 
 // MARK: - Add Child Name View
 // MARK: - Add Child Name View
+// MARK: - Add Child Name View
 struct AddChildNameView: View {
-    @Binding var isPresented: Bool             // 🔹 Controls the fullScreenCover
+    @Binding var isPresented: Bool             // Controls the fullScreenCover
     let selectedGender: String
     var fetchChildrenCallback: (() -> Void)?
-    var onFinish: (() -> Void)?             // 🔹 Called after successful submit (to close AddChildView)
+    var onFinish: (() -> Void)?               // Called after successful submit (to close AddChildView)
 
     @State private var childName = ""
     @State private var isLoading = false
-    @State private var alertType: AlertType? = nil
 
-    enum AlertType: Identifiable {
-        case duplicate
-        case success
-        var id: Int { hashValue }
-    }
+    // Popup states (consistent with EditProfileView)
+    @State private var showSuccessMessage = false
+    @State private var showDuplicateMessage = false
 
     var body: some View {
         ZStack {
@@ -157,17 +155,16 @@ struct AddChildNameView: View {
                 // Back Button (to go back to gender selection)
                 HStack {
                     Button(action: {
-                        isPresented = false    // 🔹 Close only the name page
+                        isPresented = false    // Close only the name page
                     }) {
                         Image(systemName: "chevron.left")
                             .foregroundColor(.primary)
                             .font(.system(size: 22, weight: .medium))
                             .padding(8)
-                            // .padding(.top, -65) // ❌ REMOVE: This line pushes the button off-screen
                     }
                     Spacer()
                 }
-                .padding(.top, 10) // ✅ CHANGED: Reduce top padding to keep the button visible
+                .padding(.top, 10)
                 .padding(.horizontal, 10)
 
                 // Title
@@ -183,14 +180,16 @@ struct AddChildNameView: View {
                 // Text Field
                 TextField("Enter name", text: $childName)
                     .padding()
-                    .background(Color("TextFieldBg")) // fixed for dark mode
+                    .background(Color("TextFieldBg"))
                     .cornerRadius(20)
                     .overlay(
                         RoundedRectangle(cornerRadius: 20)
-                            .stroke(selectedGender == "Boy"
-                                    ? Color.blue.opacity(0.5)
-                                    : Color.pink.opacity(0.5),
-                                    lineWidth: 2)
+                            .stroke(
+                                selectedGender == "Boy"
+                                ? Color.blue.opacity(0.5)
+                                : Color.pink.opacity(0.5),
+                                lineWidth: 2
+                            )
                     )
                     .shadow(color: .gray.opacity(0.15),
                             radius: 3, x: 0, y: 2)
@@ -226,27 +225,76 @@ struct AddChildNameView: View {
                 }
                 .padding(.bottom, 63)
             }
-        }
-        // Alerts
-        .alert(item: $alertType) { alert in
-            switch alert {
-            case .duplicate:
-                return Alert(
-                    title: Text("Duplicate Name"),
-                    message: Text("You already have a child with this name."),
-                    dismissButton: .default(Text("OK"))
-                )
-            case .success:
-                return Alert(
-                    title: Text("Child Added"),
-                    message: Text("\(childName) has been successfully added."),
-                    dismissButton: .default(Text("OK")) {
-                        // 🔹 Close the name page
-                        isPresented = false
-                        // 🔹 Then close AddChildView (back to Home)
-                        onFinish?()
+
+            // MARK: - Duplicate Name Popup
+            if showDuplicateMessage {
+                ZStack {
+                    Color.black.opacity(0.2).ignoresSafeArea()
+
+                    VStack(spacing: 10) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 40))
+                            .foregroundColor(.yellow)
+
+                        Text("Duplicate name")
+                            .font(.headline)
+                            .foregroundColor(Color("BlackFont"))
+
+                        Text("You already have a child with this name.")
+                            .font(.subheadline)
+                            .foregroundColor(Color("ColorGray"))
+                            .multilineTextAlignment(.center)
                     }
-                )
+                    .padding(.vertical, 20)
+                    .padding(.horizontal, 24)
+                    .background(
+                        RoundedRectangle(cornerRadius: 18)
+                            .fill(Color("BgColor"))
+                            .shadow(color: .black.opacity(0.2),
+                                    radius: 10, x: 0, y: 4)
+                    )
+                }
+                .transition(.opacity)
+                .animation(.easeInOut(duration: 0.25), value: showDuplicateMessage)
+            }
+
+            // MARK: - Success Popup
+            if showSuccessMessage {
+                ZStack {
+                    Color.black.opacity(0.2).ignoresSafeArea()
+
+                    VStack(spacing: 10) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 40))
+                            .foregroundColor(.green)
+
+                        Text("Child added")
+                            .font(.headline)
+                            .foregroundColor(Color("BlackFont"))
+
+                        Text("\(childName) has been successfully added.")
+                            .font(.subheadline)
+                            .foregroundColor(Color("ColorGray"))
+                            .multilineTextAlignment(.center)
+                    }
+                    .padding(.vertical, 20)
+                    .padding(.horizontal, 24)
+                    .background(
+                        RoundedRectangle(cornerRadius: 18)
+                            .fill(Color("BgColor"))
+                            .shadow(color: .black.opacity(0.2),
+                                    radius: 10, x: 0, y: 4)
+                    )
+                }
+                .transition(.opacity)
+                .animation(.easeInOut(duration: 0.25), value: showSuccessMessage)
+            }
+
+            // Optional: light overlay while loading
+            if isLoading {
+                ZStack {
+                    Color.black.opacity(0.05).ignoresSafeArea()
+                }
             }
         }
     }
@@ -276,7 +324,15 @@ struct AddChildNameView: View {
 
                 if let documents = snapshot?.documents, !documents.isEmpty {
                     DispatchQueue.main.async {
-                        alertType = .duplicate
+                        withAnimation {
+                            showDuplicateMessage = true
+                        }
+                        // Auto-hide duplicate popup after a short delay
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                            withAnimation {
+                                showDuplicateMessage = false
+                            }
+                        }
                         isLoading = false
                     }
                     return
@@ -286,7 +342,7 @@ struct AddChildNameView: View {
                 let child = Child(
                     id: UUID().uuidString,
                     name: childName,
-                    color: selectedGender == "Boy" ? "blue" : "pink", // fixed colors to lower case
+                    color: selectedGender == "Boy" ? "blue" : "pink",
                     imageData: nil,
                     imageName: nil
                 )
@@ -317,8 +373,21 @@ struct AddChildNameView: View {
                                     }
                                 }
 
-                            // Show success alert
-                            alertType = .success
+                            // Show success popup
+                            withAnimation {
+                                showSuccessMessage = true
+                            }
+
+                            // Auto-dismiss popup, then close screens
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+                                withAnimation {
+                                    showSuccessMessage = false
+                                }
+                                // Close the name page
+                                isPresented = false
+                                // Then close AddChildView (back to Home)
+                                onFinish?()
+                            }
 
                         case .failure(let error):
                             print("Error saving child: \(error.localizedDescription)")
@@ -354,6 +423,7 @@ struct AddChildNameView: View {
             }
     }
 }
+
 
 // MARK: - Bubble Background
 struct BubbleBackground: View {
