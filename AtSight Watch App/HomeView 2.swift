@@ -20,6 +20,8 @@ struct HomeView_Watch: View {
     @StateObject private var pairing = PairingState.shared
     // ✅ Use the shared HaltReceiver instead of local state
     @StateObject private var haltManager = HaltReceiver.shared
+    // ✅ NEW: observe HeartRateMonitor so we can show the off-wrist popup
+    @StateObject private var heartRateMonitor = HeartRateMonitor.shared
     
     @State private var showSOSPopup = false
     @State private var selectedGuardianId: String?
@@ -207,7 +209,8 @@ struct HomeView_Watch: View {
                     .padding(.vertical, -10)
                 }
 
-                // Overlays
+                // MARK: - Overlays
+
                 if showSOSPopup {
                     SOSConfirmSheet(isShowing: $showSOSPopup) {
                         showSOSPopup = false
@@ -227,7 +230,7 @@ struct HomeView_Watch: View {
                     }
                 }
                 
-                // ✅ Updated HALT Overlay using the HaltReceiver ObservableObject
+                // ✅ HALT Overlay using the HaltReceiver ObservableObject
                 if haltManager.isHaltActive {
                     HaltAlertView(message: "HALT SIGNAL RECEIVED") {
                         // Only allow dismiss if the timer allows it
@@ -236,6 +239,17 @@ struct HomeView_Watch: View {
                         }
                     }
                 }
+
+                // ✅ NEW: Off-wrist confirmation popup for the child
+                if heartRateMonitor.showOffWristPrompt {
+                                    OffWristPromptView(
+                                        childName: pairing.childName.isEmpty ? "you" : pairing.childName,
+                                        onStillHere: {
+                                            HeartRateMonitor.shared.childConfirmedStillHere()
+                                        }
+                                        // ❌ Removed onNotHere argument
+                                    )
+                                }
 
                 NavigationLink(destination: chatDestination, isActive: $navigateToChat) {
                     EmptyView()
@@ -266,7 +280,6 @@ struct HomeView_Watch: View {
     }
 }
 
-// ... (Rest of the subviews like ContactRow_Watch, SOSConfirmSheet remain the same)
 // MARK: - Contact Row
 struct ContactRow_Watch: View {
     var name: String
@@ -411,6 +424,118 @@ struct HaltAlertView: View {
     }
 }
 
+
+// MARK: - NEW Off-wrist prompt view
+
+struct OffWristPromptView: View {
+    let childName: String
+    let onStillHere: () -> Void
+    
+    // Same timeout behavior
+    @State private var timeRemaining = 15
+    @State private var timer: Timer?
+
+    var body: some View {
+        ZStack {
+            // Dimmed background
+            Color.black.opacity(0.8)
+                .ignoresSafeArea()
+            
+            VStack(spacing: 14) {
+                
+                // Icon
+                ZStack {
+                    Circle()
+                        .fill(Color("Blue").opacity(0.2))
+                        .frame(width: 46, height: 46)
+                    Image(systemName: "questionmark.circle.fill")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 26, height: 26)
+                        .foregroundColor(Color.green.opacity(0.9))
+                }
+                
+                // Title
+                Text("Watch Check")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(.white)
+                
+                // Body text
+                Text("Are you still wearing the watch?")
+                    .font(.system(size: 12))
+                    .foregroundColor(Color(white: 0.85))
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 6)
+                    .fixedSize(horizontal: false, vertical: true)
+                
+                // Timer badge
+                let timerColor: Color = timeRemaining <= 5
+                    ? .red
+                    : Color.green.opacity(0.9)
+                
+                HStack(spacing: 6) {
+                    Image(systemName: "clock")
+                        .font(.system(size: 11, weight: .medium))
+                    Text("Timeout in \(Int(timeRemaining))s")
+                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                }
+                .padding(.vertical, 4)
+                .padding(.horizontal, 10)
+                .background(timerColor.opacity(0.18))
+                .foregroundColor(timerColor)
+                .clipShape(Capsule())
+                
+                // Button
+                Button(action: {
+                    timer?.invalidate()
+                    onStillHere()
+                }) {
+                    Text("Yes, I'm here")
+                        .font(.system(size: 14, weight: .semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                        .background(Color.green)
+                        .foregroundColor(.white)
+                        .cornerRadius(12)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.vertical, 18)
+            .padding(.horizontal, 14)
+            .frame(maxWidth: .infinity)
+            .background(Color(white: 0.20))
+            .cornerRadius(18)
+            .padding(.horizontal, 12) // extra inset so nothing touches screen edges
+        }
+        .onAppear {
+            WKInterfaceDevice.current().play(.notification)
+            startTimer()
+        }
+        .onDisappear {
+            timer?.invalidate()
+            timer = nil
+        }
+    }
+    
+    private func startTimer() {
+        timer?.invalidate()
+        timeRemaining = 15
+        
+        timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { t in
+            if timeRemaining > 0 {
+                DispatchQueue.main.async {
+                    self.timeRemaining -= 1
+                }
+            } else {
+                t.invalidate()
+                HeartRateMonitor.shared.promptTimeoutAction()
+            }
+        }
+    }
+}
+
+
+
 // MARK: - Background Voice Fetcher
 final class VoiceChatBackground {
     static let shared = VoiceChatBackground()
@@ -486,3 +611,4 @@ final class VoiceChatBackground {
 #Preview {
     HomeView_Watch()
 }
+

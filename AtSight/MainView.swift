@@ -127,7 +127,7 @@ struct MainView: View {
                         }
                         // MARK: This offset is relative to the ZStack, not the screen center
                         // MARK: This makes it safe for all device sizes.
-                        .offset(y: -30)
+                        .offset(y: -15)
                     }
                     // MARK: Give the ZStack a fixed height to contain the popped-out button
                     .frame(height: 100)

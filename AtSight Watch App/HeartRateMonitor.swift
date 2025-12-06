@@ -1,16 +1,17 @@
 //
-//  HeartRateMonitor.swift
-//  AtSight Watch App
+//  HeartRateMonitor.swift
+//  AtSight Watch App
 //
-//  Created by Leena on 22/10/2025.
-//  Simplified: motion + missing-HR off-wrist heuristic, stale filtering, clean IDs
+//  Created by Leena on 22/10/2025.
+//  Simplified: motion + missing-HR off-wrist heuristic, stale filtering, clean IDs
 //
 
 import Foundation
 import HealthKit
 import CoreMotion
+import Combine
 
-final class HeartRateMonitor: NSObject {
+final class HeartRateMonitor: NSObject, ObservableObject {
     static let shared = HeartRateMonitor()
 
     private let healthStore = HKHealthStore()
@@ -18,6 +19,8 @@ final class HeartRateMonitor: NSObject {
 
     private var query: HKObserverQuery?
     private var timer: Timer?
+    // ✅ NEW: Timer for the child's response timeout
+    private var promptResponseTimer: Timer?
 
     // Last known heart rate + time
     private var lastBPM: Double = 0
@@ -32,9 +35,9 @@ final class HeartRateMonitor: NSObject {
     private var backOnCandidateCount = 0
 
     // Heuristic thresholds
-    private let maxSampleAge: TimeInterval = 15           // ignore HR older than this (seconds)
+    private let maxSampleAge: TimeInterval = 15          // ignore HR older than this (seconds)
     private let noHRThreshold: TimeInterval = 120         // no HR for ≥ 2 min
-    private let motionQuietThreshold: TimeInterval = 300  // no motion for ≥ 5 min (strong case)
+    private let motionQuietThreshold: TimeInterval = 300 // no motion for ≥ 5 min (strong case)
     private let longMotionQuietThreshold: TimeInterval = 60 // no motion for ≥ 1 min (fallback / debug)
     private let alertCooldown: TimeInterval = 120         // don’t spam alerts more than once per 2 min
 
@@ -42,6 +45,15 @@ final class HeartRateMonitor: NSObject {
     private let backOnRequiredSamples = 3                 // how many good samples in a row
     private let backOnMaxSampleAge: TimeInterval = 8      // HR sample must be this fresh
     private let backOnMotionWindow: TimeInterval = 20     // motion must be recent within this window (seconds)
+
+    // ✅ NEW: Duration for the child to respond before auto-sending "removed" notification
+    private let promptTimeoutDuration: TimeInterval = 15 // Set to 15 seconds (adjust as needed)
+
+    // MARK: - Child popup state (for SwiftUI)
+    @Published var showOffWristPrompt: Bool = false
+
+    // We remember which child name to use when sending "watch_removed"
+    private var pendingChildNameForPrompt: String?
 
     private override init() {}
 
@@ -80,6 +92,10 @@ final class HeartRateMonitor: NSObject {
     func stopMonitoring() {
         timer?.invalidate()
         timer = nil
+        
+        // ✅ Stop the prompt timer
+        promptResponseTimer?.invalidate()
+        promptResponseTimer = nil
 
         if let q = query {
             healthStore.stop(q)
@@ -92,6 +108,8 @@ final class HeartRateMonitor: NSObject {
         backOnCandidateCount = 0
         lastBPM = 0
         lastUpdateTime = 0
+        showOffWristPrompt = false
+        pendingChildNameForPrompt = nil
 
         print("🛑 HeartRateMonitor stopped")
     }
@@ -128,7 +146,7 @@ final class HeartRateMonitor: NSObject {
         // Initialize so we don’t immediately think it's quiet
         let nowTs = Date().timeIntervalSince1970
         lastSignificantMotionTime = nowTs
-        lastUpdateTime = 0  // no sample yet
+        lastUpdateTime = 0 // no sample yet
         isLikelyOffWrist = false
         backOnCandidateCount = 0
 
@@ -238,8 +256,8 @@ final class HeartRateMonitor: NSObject {
         let secondsSinceMotion = nowTs - lastSignificantMotionTime
 
         // Strong case: no HR + no motion
-        let hrIsStale = secondsSinceHR > noHRThreshold                    // e.g. > 2 min
-        let motionIsVeryLow = secondsSinceMotion > motionQuietThreshold   // e.g. > 5 min
+        let hrIsStale = secondsSinceHR > noHRThreshold         // e.g. > 2 min
+        let motionIsVeryLow = secondsSinceMotion > motionQuietThreshold  // e.g. > 5 min
 
         // Fallback: long period with no motion, even if HR keeps coming
         let longMotionQuiet = secondsSinceMotion > longMotionQuietThreshold // e.g. > 1 min
@@ -247,8 +265,8 @@ final class HeartRateMonitor: NSObject {
         print("🧪 [HRM] Off-wrist check → sinceHR=\(secondsSinceHR)s, sinceMotion=\(secondsSinceMotion)s, hrIsStale=\(hrIsStale), motionLow=\(motionIsVeryLow), longQuiet=\(longMotionQuiet)")
 
         let shouldTrigger =
-            (hrIsStale && motionIsVeryLow) ||  // strong case
-            longMotionQuiet                    // fallback case
+            (hrIsStale && motionIsVeryLow) || // strong case
+            longMotionQuiet                  // fallback case
 
         guard shouldTrigger else { return }
 
@@ -258,16 +276,20 @@ final class HeartRateMonitor: NSObject {
             return
         }
 
-        // Only transition once into off-wrist state
+        // Only trigger once: now we show a popup to the child instead of
+        // immediately notifying the parent.
         if !isLikelyOffWrist {
             isLikelyOffWrist = true
             backOnCandidateCount = 0
-
             lastAlertTime = nowTs
-            print("🚨 [HRM] Off-wrist condition met → sending watch_removed event")
-            notifyWatchRemoved(childName: childName)
+            pendingChildNameForPrompt = childName
+
+            print("🚨 [HRM] Off-wrist condition met → asking child: Are you still here?")
+            DispatchQueue.main.async {
+                self.showOffWristPrompt = true
+            }
         } else {
-            print("🔁 [HRM] Still off-wrist, not sending duplicate alert")
+            print("🔁 [HRM] Still off-wrist, not re-showing prompt (cooldown active)")
         }
     }
 
@@ -320,6 +342,44 @@ final class HeartRateMonitor: NSObject {
         APIHelper.shared.post(to: API.uploadHeartRate, body: payload)
         print("📤 [HRM] Sent heart rate via API:", payload)
     }
+
+    // MARK: - Child popup responses
+
+    /// Child taps "Yes" (Still Here) OR timeout occurs (Still Here).
+    func childConfirmedStillHere() {
+        print("✅ [HRM] Child confirmed watch is still on (or prompt timed out successfully).")
+        // ✅ Stop the prompt timeout timer
+        promptResponseTimer?.invalidate()
+        promptResponseTimer = nil
+        
+        isLikelyOffWrist = false
+        backOnCandidateCount = 0
+        pendingChildNameForPrompt = nil
+
+        DispatchQueue.main.async {
+            self.showOffWristPrompt = false
+        }
+    }
+    
+    // ✅ NEW: Logic when the prompt times out and we assume the watch is off.
+    func promptTimeoutAction() {
+        let name = pendingChildNameForPrompt ?? "Child"
+        print("🚨 [HRM] Prompt timed out (No response) → assuming watch is OFF → notifying parent.")
+        
+        // Ensure state is reset
+        isLikelyOffWrist = true // Keep this true until we see good samples again
+        pendingChildNameForPrompt = nil
+        
+        // 1. Send Parent notification
+        notifyWatchRemoved(childName: name)
+
+        // 2. Hide the prompt
+        DispatchQueue.main.async {
+            self.showOffWristPrompt = false
+        }
+    }
+
+    /// Removed the `childConfirmedOff()` function as only the timeout should trigger the "No" scenario.
 
     // MARK: - Watch removed notifier
 

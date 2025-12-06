@@ -132,18 +132,16 @@ struct GenderOptionView: View {
 }
 
 // MARK: - Add Child Name View
-// MARK: - Add Child Name View
-// MARK: - Add Child Name View
 struct AddChildNameView: View {
-    @Binding var isPresented: Bool             // Controls the fullScreenCover
+    @Binding var isPresented: Bool
     let selectedGender: String
     var fetchChildrenCallback: (() -> Void)?
-    var onFinish: (() -> Void)?               // Called after successful submit (to close AddChildView)
+    var onFinish: (() -> Void)?
 
     @State private var childName = ""
     @State private var isLoading = false
 
-    // Popup states (consistent with EditProfileView)
+    // Popup states
     @State private var showSuccessMessage = false
     @State private var showDuplicateMessage = false
 
@@ -155,7 +153,7 @@ struct AddChildNameView: View {
                 // Back Button (to go back to gender selection)
                 HStack {
                     Button(action: {
-                        isPresented = false    // Close only the name page
+                        isPresented = false
                     }) {
                         Image(systemName: "chevron.left")
                             .foregroundColor(.primary)
@@ -180,7 +178,7 @@ struct AddChildNameView: View {
                 // Text Field
                 TextField("Enter name", text: $childName)
                     .padding()
-                    .background(Color("TextFieldBg"))
+                    .background(Color("TextFieldBg").opacity(0.5))
                     .cornerRadius(20)
                     .overlay(
                         RoundedRectangle(cornerRadius: 20)
@@ -290,7 +288,6 @@ struct AddChildNameView: View {
                 .animation(.easeInOut(duration: 0.25), value: showSuccessMessage)
             }
 
-            // Optional: light overlay while loading
             if isLoading {
                 ZStack {
                     Color.black.opacity(0.05).ignoresSafeArea()
@@ -383,9 +380,7 @@ struct AddChildNameView: View {
                                 withAnimation {
                                     showSuccessMessage = false
                                 }
-                                // Close the name page
                                 isPresented = false
-                                // Then close AddChildView (back to Home)
                                 onFinish?()
                             }
 

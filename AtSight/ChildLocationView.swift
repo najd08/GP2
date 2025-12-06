@@ -432,6 +432,7 @@ struct ChildLocationView: View {
         let place  = (data["placeName"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
         return [street, zone, place].compactMap { $0 }.first(where: { !$0.isEmpty }) ?? "Unknown"
     }
+    
 }
 
 // MARK: - Halt button

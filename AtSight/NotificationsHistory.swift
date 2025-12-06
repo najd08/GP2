@@ -143,7 +143,7 @@ extension NotificationItem {
         if let event = event {
             switch event {
             case "watch_removed":
-                return "heart.slash"
+                return "applewatch.slash"
             case "battery_low":
                 return "battery.25"
             case "sos_alert":
