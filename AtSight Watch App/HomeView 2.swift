@@ -5,6 +5,12 @@
 //  ✅ Added background voice listener (fetch every 2s + haptic alert)
 //  ✅ Prevents repeated playback across Home + Chat using shared UserDefaults
 //
+//  UPDATED BY RIYAM: Implemented MessageNotifier for universal popup and Last Messages queue.
+//  UPDATED BY RIYAM: Adjusted MessagePopupView positioning (top-center) and text color.
+//  UPDATED BY RIYAM: Implemented SEQUENTIAL playback and counter logic.
+//  UPDATED BY RIYAM: REMOVED Last Messages button from HomeView.
+//  ✅ FINAL FIX: ADDED Unheard Message Badge to Guardian Contact Row AND Fixed Popup Sender Name Display.
+//  ❌ CORRECTION: REMOVED incorrect badge placement from Pairing Code Button.
 
 // EDIT BY RIYAM: Removed Header Image.
 // EDIT BY RIYAM: Expanded Guardian List to fill screen space.
@@ -16,9 +22,186 @@ import WatchConnectivity
 import AVFoundation
 import WatchKit
 
+// MARK: - Shared Message Notifier (Handles Notification, Queue, and Playback)
+final class MessageNotifier: ObservableObject {
+    static let shared = MessageNotifier()
+    
+    @Published var isMessageAlertActive = false
+    @Published var latestAudioURL: String?
+    @Published var latestSenderName: String?
+    
+    private var player: AVPlayer?
+    private var playerDidFinishObserver: NSObjectProtocol?
+    
+    private let unplayedQueueKey = "unplayedMessageQueue"
+    
+    deinit {
+        if let observer = playerDidFinishObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+    }
+    
+    // --- Message Queue Logic (Counter) ---
+    var unheardMessageCount: Int {
+        return UserDefaults.standard.stringArray(forKey: unplayedQueueKey)?.count ?? 0
+    }
+    
+    // ✅ Logic to count messages in the queue specific to a given sender name (Used for Badge Count)
+    func getUnheardCount(for senderName: String) -> Int {
+        let queue = UserDefaults.standard.stringArray(forKey: unplayedQueueKey) ?? []
+        // Filters queue items based on the sender name (stored as "URL|NAME")
+        return queue.filter { $0.hasSuffix("|\(senderName)") }.count
+    }
+    
+    var hasUnheardMessages: Bool {
+        return unheardMessageCount > 0
+    }
+    
+    func addToLaterQueue(url: String, name: String) {
+        var queue = UserDefaults.standard.stringArray(forKey: unplayedQueueKey) ?? []
+        // Store as "URL|NAME"
+        queue.append("\(url)|\(name)")
+        UserDefaults.standard.set(queue, forKey: unplayedQueueKey)
+        DispatchQueue.main.async { self.objectWillChange.send() } // Update count on UI
+    }
+    
+    // --- Notification Logic ---
+    func notifyNewMessage(audioURL: String, senderName: String) {
+        guard !isMessageAlertActive else { return }
+        
+        self.latestAudioURL = audioURL
+        self.latestSenderName = senderName
+        
+        DispatchQueue.main.async {
+            WKInterfaceDevice.current().play(.notification)
+            self.isMessageAlertActive = true
+            self.objectWillChange.send() // Ensure UI updates, especially the chat button badge
+        }
+    }
+    
+    func dismissAlert() {
+        self.latestAudioURL = nil
+        self.latestSenderName = nil
+        self.isMessageAlertActive = false
+    }
+    
+    func playLatestMessage() {
+        guard let urlString = latestAudioURL else { return }
+        
+        self.dismissAlert()
+        self.playAudio(from: urlString, isQueued: false, for: nil) // Play the notification message
+    }
+
+    // --- Playback Logic (Sequential Playback) ---
+    // ✅ MODIFIED: Playback is now isolated to messages belonging to the specific guardian OR the most recent overall message.
+    func playQueueOrLatest(for guardianName: String) {
+        var queue = UserDefaults.standard.stringArray(forKey: unplayedQueueKey) ?? []
+        
+        // 1️⃣ Find the OLDEST message in the queue that belongs to THIS specific guardian.
+        if let index = queue.firstIndex(where: { $0.hasSuffix("|\(guardianName)") }) {
+            let item = queue.remove(at: index)
+            UserDefaults.standard.set(queue, forKey: unplayedQueueKey)
+            
+            let urlString = item.components(separatedBy: "|").first ?? ""
+            
+            DispatchQueue.main.async {
+                self.objectWillChange.send() // Update the badge immediately
+            }
+            
+            print("🔊 Playing queued message for \(guardianName): \(urlString)")
+            // Call playAudio and set up continuation for the SAME guardian's remaining messages.
+            playAudio(from: urlString, isQueued: true, for: guardianName)
+            return
+        }
+        
+        // 2️⃣ FALLBACK: If the queue for THIS guardian is empty, play the most recent message received from THIS guardian.
+        let fallbackKey = "lastPlayedVoiceURL_\(guardianName)"
+        
+        if let recentURL = UserDefaults.standard.string(forKey: fallbackKey) {
+            print("🔊 Playing recent message for \(guardianName): \(recentURL) (Queue empty)")
+            // Play it as a one-off (not queued)
+            playAudio(from: recentURL, isQueued: false, for: nil)
+        }
+    }
+    
+    // NOTE: This function is used ONLY for sequential playback continuation within the same guardian's queue.
+    private func playAudio(from urlString: String, isQueued: Bool, for sequentialGuardian: String?) {
+        guard let url = URL(string: urlString) else { return }
+        
+        if let observer = playerDidFinishObserver {
+            NotificationCenter.default.removeObserver(observer)
+            playerDidFinishObserver = nil
+        }
+        
+        player?.pause()
+        player = AVPlayer(url: url)
+        player?.play()
+        
+        if isQueued, let gName = sequentialGuardian {
+            // Set up continuation to find the NEXT message specifically for this guardian
+            playerDidFinishObserver = NotificationCenter.default.addObserver(
+                forName: .AVPlayerItemDidPlayToEndTime,
+                object: player?.currentItem,
+                queue: .main
+            ) { [weak self] _ in
+                // Recursively call the isolated function to get the next message for this guardian
+                self?.playQueueOrLatest(for: gName)
+            }
+        }
+    }
+    
+    // NOTE: The original playNextQueuedMessage is now fully replaced by playQueueOrLatest(for:) for queue handling.
+}
+
+
+// MARK: - Message Popup View (Unchanged)
+struct MessagePopupView: View {
+    @ObservedObject var notifier: MessageNotifier
+    private let buttons   = Color("Buttons")
+    
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.4).ignoresSafeArea()
+            VStack(spacing: 12) {
+                Text("You received a new message")
+                    .font(.subheadline)
+                    .bold()
+                    .foregroundColor(buttons)
+                
+                // ✅ FIX: Directly use latestSenderName for display
+                Text("From: \(notifier.latestSenderName ?? "Guardian")")
+                    .font(.caption2)
+                    .foregroundColor(.gray)
+                
+                HStack {
+                    Button("Listen") {
+                        notifier.playLatestMessage()
+                    }
+                    .tint(buttons)
+                    
+                    Button("Later") {
+                        if let url = notifier.latestAudioURL,
+                           let name = notifier.latestSenderName {
+                            notifier.addToLaterQueue(url: url, name: name)
+                        }
+                        notifier.dismissAlert()
+                    }
+                    .tint(.gray)
+                }
+            }
+            .padding()
+            .background(Color.white)
+            .cornerRadius(15)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .offset(y: 10)
+        }
+        .zIndex(100)
+    }
+}
+
+
 struct HomeView_Watch: View {
     @StateObject private var pairing = PairingState.shared
-    // ✅ Use the shared HaltReceiver instead of local state
     @StateObject private var haltManager = HaltReceiver.shared
     // ✅ NEW: observe HeartRateMonitor so we can show the off-wrist popup
     @StateObject private var heartRateMonitor = HeartRateMonitor.shared
@@ -27,9 +210,7 @@ struct HomeView_Watch: View {
     @State private var selectedGuardianId: String?
     @State private var navigateToChat = false
     
-    // Timers for background logic
     @State private var unlinkTimer: Timer?
-    // ❌ REMOVED: haltTimer (HaltReceiver handles this now)
 
     // MARK: - Style
     private let bgTop     = Color(red: 0.965, green: 0.975, blue: 1.00)
@@ -53,11 +234,16 @@ struct HomeView_Watch: View {
         BatteryMonitor.shared.startMonitoring(for: childName)
         WatchLocationManager.shared.startLiveUpdates()
         HeartRateMonitor.shared.startMonitoring(for: childName)
-        VoiceChatBackground.shared.startListening()
+        
+        // --- MODIFIED: Pass pairing state to background listener ---
+        VoiceChatBackground.shared.startListening(
+            with: messageNotifier,
+            pairingState: pairing
+        )
+        // -----------------------------------------------------------
         
         startUnlinkCheck()
         
-        // ✅ Start the centralized Halt Listener
         haltManager.startListening()
         
         print("✅ [Home] services started")
@@ -71,13 +257,11 @@ struct HomeView_Watch: View {
         HeartRateMonitor.shared.stopMonitoring()
         VoiceChatBackground.shared.stopListening()
         
-        // ✅ Stop Halt Listener
         haltManager.stopListening()
         
         print("🛑 [Home] services stopped")
     }
     
-    // MARK: - Unlink Checker
     private func startUnlinkCheck() {
         unlinkTimer?.invalidate()
         unlinkTimer = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: true) { _ in
@@ -86,7 +270,6 @@ struct HomeView_Watch: View {
     }
     
     private func checkForUnlink() {
-        // ... (Keep existing unlink logic) ...
         for guardianId in pairing.linkedGuardianIDs {
             guard let childId = pairing.guardianChildIDs[guardianId], !childId.isEmpty else { continue }
             
@@ -109,9 +292,6 @@ struct HomeView_Watch: View {
         }
     }
     
-    // ❌ REMOVED: startHaltCheck() and checkForHaltSignal()
-    // The logic inside HaltReceiver.swift handles this more accurately now.
-
     // MARK: - Body
     var body: some View {
         NavigationStack {
@@ -128,10 +308,11 @@ struct HomeView_Watch: View {
                             .font(.system(size: 16, weight: .semibold))
                             .foregroundColor(brandBlue)
                             .lineLimit(1)
-
-                        Spacer()
                         
+                        Spacer()
+
                         NavigationLink(destination: PairingView()) {
+                            // CORRECTED: Badge logic removed from here
                             HStack(spacing: 4) {
                                 Image(systemName: "person.badge.plus")
                                     .font(.system(size: 12))
@@ -164,7 +345,8 @@ struct HomeView_Watch: View {
                                 ForEach(pairing.linkedGuardianIDs, id: \.self) { guardianId in
                                     let name = pairing.guardianNames[guardianId] ?? "Guardian"
                                     
-                                    ContactRow_Watch(name: name) {
+                                    // Inject messageNotifier into the row
+                                    ContactRow_Watch(name: name, messageNotifier: messageNotifier) {
                                         selectedGuardianId = guardianId
                                         navigateToChat = true
                                     }
@@ -233,11 +415,15 @@ struct HomeView_Watch: View {
                 // ✅ HALT Overlay using the HaltReceiver ObservableObject
                 if haltManager.isHaltActive {
                     HaltAlertView(message: "HALT SIGNAL RECEIVED") {
-                        // Only allow dismiss if the timer allows it
                         if haltManager.canDismiss {
                             haltManager.dismissHalt()
                         }
                     }
+                }
+                
+                // MARK: New Message Overlay (Using top-center position)
+                if messageNotifier.isMessageAlertActive {
+                    MessagePopupView(notifier: messageNotifier)
                 }
 
                 // ✅ NEW: Off-wrist confirmation popup for the child
@@ -283,9 +469,16 @@ struct HomeView_Watch: View {
 // MARK: - Contact Row
 struct ContactRow_Watch: View {
     var name: String
+    @ObservedObject var messageNotifier: MessageNotifier // Inject notifier
     var onChatTapped: () -> Void
     private let buttons = Color("Buttons")
     private let stroke = Color.black.opacity(0.10)
+    
+    // Calculate the number of unheard messages for this specific guardian
+    private var badgeCount: Int {
+        // Uses the new function in MessageNotifier
+        return messageNotifier.getUnheardCount(for: name)
+    }
 
     var body: some View {
         Button(action: onChatTapped) {
@@ -299,6 +492,16 @@ struct ContactRow_Watch: View {
                         .font(.system(size: 14, weight: .medium))
                         .padding(6)
                         .background(Circle().fill(buttons))
+                    
+                    // ✅ Unheard Message Badge UI (MOVED TO TOP-RIGHT)
+                    if badgeCount > 0 {
+                        Text("\(badgeCount)")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundColor(.white)
+                            .frame(width: 14, height: 14)
+                            .background(Circle().fill(Color.red))
+                            .offset(x: 15, y: -15) // FIXED OFFSET for Top-Right
+                    }
                 }
 
                 Text(name)
@@ -326,7 +529,7 @@ struct ContactRow_Watch: View {
     }
 }
 
-// MARK: - SOS Confirm Sheet (Original)
+// MARK: - SOS Confirm Sheet (No Change)
 struct SOSConfirmSheet: View {
     @Binding var isShowing: Bool
     var onSend: () -> Void
@@ -351,7 +554,7 @@ struct SOSConfirmSheet: View {
     }
 }
 
-// MARK: - HALT Alert View (Immediate Start & Auto-Stop)
+// MARK: - HALT Alert View (No Change)
 struct HaltAlertView: View {
     let message: String
     let onDismiss: () -> Void
@@ -398,20 +601,16 @@ struct HaltAlertView: View {
     }
     
     private func startAlerts() {
-        // 1. Play IMMEDIATE haptic
         WKInterfaceDevice.current().play(.notification)
         
-        // 2. Schedule recurring haptic loop
         hapticTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { _ in
             WKInterfaceDevice.current().play(.notification)
         }
         
-        // 3. Countdown timer - Stops sound at 0
         Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { timer in
             if timeRemaining > 0 {
                 timeRemaining -= 1
             } else {
-                // 🛑 Stop sounds/haptics automatically after 15s
                 stopAlerts()
                 timer.invalidate()
             }
@@ -540,71 +739,107 @@ struct OffWristPromptView: View {
 final class VoiceChatBackground {
     static let shared = VoiceChatBackground()
     private var timer: Timer?
-    private var player: AVPlayer?
+    private weak var pairing: PairingState?
 
-    private var lastURL: String? {
-        get { UserDefaults.standard.string(forKey: "lastPlayedVoiceURL") }
-        set { UserDefaults.standard.set(newValue, forKey: "lastPlayedVoiceURL") }
+    // --- Helper functions for per-guardian state management ---
+    
+    private func lastURL(for guardianId: String) -> String? {
+        return UserDefaults.standard.string(forKey: "lastPlayedVoiceURL_\(guardianId)")
     }
 
-    private var wasPlayed: Bool {
-        get { UserDefaults.standard.bool(forKey: "lastPlayedVoicePlayed") }
-        set { UserDefaults.standard.set(newValue, forKey: "lastPlayedVoicePlayed") }
+    private func setLastURL(_ url: String, for guardianId: String) {
+        UserDefaults.standard.set(url, forKey: "lastPlayedVoiceURL_\(guardianId)")
+    }
+    
+    private func wasPlayed(for guardianId: String) -> Bool {
+        return UserDefaults.standard.bool(forKey: "lastPlayedVoicePlayed_\(guardianId)")
     }
 
-    func startListening() {
+    private func setWasPlayed(_ played: Bool, for guardianId: String) {
+        UserDefaults.standard.set(played, forKey: "lastPlayedVoicePlayed_\(guardianId)")
+    }
+    // -------------------------------------------------------------
+
+    func startListening(with notifier: MessageNotifier? = nil, pairingState: PairingState) {
         stopListening()
-        timer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { _ in
-            self.fetchLatestMessage()
+        self.pairing = pairingState
+        timer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+            self?.fetchAllLatestMessages(notifier: notifier)
         }
-        print("🎧 Background voice listener started (2s interval)")
+        print("🎧 Background voice listener started (2s interval) for all guardians.")
     }
 
     func stopListening() {
         timer?.invalidate()
         timer = nil
+        self.pairing = nil
         print("🛑 Background voice listener stopped")
     }
 
-    private func fetchLatestMessage() {
-        let guardianId = UserDefaults.standard.string(forKey: "guardianId") ?? ""
-        let childId = UserDefaults.standard.string(forKey: "currentChildId") ?? ""
-        guard !guardianId.isEmpty, !childId.isEmpty else { return }
+    // --- MODIFIED: Function to check all guardians (fixes Main Actor isolation) ---
+    private func fetchAllLatestMessages(notifier: MessageNotifier? = nil) {
+        Task { @MainActor in
+            guard let pairing = self.pairing else { return }
+            
+            // Iterate through all linked guardian IDs (Accessed on Main Actor)
+            for guardianId in pairing.linkedGuardianIDs {
+                guard let childId = pairing.guardianChildIDs[guardianId], !childId.isEmpty else { continue }
+                
+                let senderName = pairing.guardianNames[guardianId] ?? "Guardian"
+                
+                // Call the network function (which runs on a background thread)
+                self.fetchLatestMessage(
+                    guardianId: guardianId,
+                    childId: childId,
+                    notifier: notifier,
+                    senderName: senderName
+                )
+            }
+        }
+    }
+    
+    // --- MODIFIED: fetchLatestMessage using per-guardian state AND global tracking ---
+    private func fetchLatestMessage(guardianId: String, childId: String, notifier: MessageNotifier? = nil, senderName: String) {
         
         let urlString = "https://getvoicemessagesapi-7gq4boqq6a-uc.a.run.app?guardianId=\(guardianId)&childId=\(childId)&limit=1"
         
         guard let url = URL(string: urlString) else { return }
 
-        URLSession.shared.dataTask(with: url) { data, _, _ in
-            guard let data,
+        URLSession.shared.dataTask(with: url) { [weak self] data, _, _ in
+            guard let self = self,
+                  let data,
                   let json = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]],
                   let latest = json.first,
                   let audioURL = latest["audioURL"] as? String,
                   let sender = latest["sender"] as? String,
                   sender == "phone" else { return }
 
-            if self.lastURL == audioURL, self.wasPlayed { return }
+            let currentLastURL = self.lastURL(for: guardianId)
+            let currentWasPlayed = self.wasPlayed(for: guardianId)
 
-            if self.lastURL != audioURL {
-                self.lastURL = audioURL
-                self.wasPlayed = false
+            // 1. Check if the latest message is the one we already saw and played for THIS guardian.
+            if currentLastURL == audioURL && currentWasPlayed { return }
+
+            // 2. If it's a NEW message (URL is different) for THIS guardian, update the URL and mark as unplayed/un-notified.
+            if currentLastURL != audioURL {
+                self.setLastURL(audioURL, for: guardianId)
+                self.setWasPlayed(false, for: guardianId) // Reset the played status for the new message
+                
+                // ✅ FIX FOR GLOBAL PLAYBACK: Update the GLOBAL last played URL for fallback playback
+                // This variable is checked by playQueueOrLatest when the queue is empty.
+                UserDefaults.standard.set(audioURL, forKey: "lastPlayedVoiceURL")
             }
 
-            if self.wasPlayed == false {
-                self.wasPlayed = true
-                print("🔊 New voice message detected → playing…")
-                WKInterfaceDevice.current().play(.notification)
-                DispatchQueue.main.async {
-                    self.playAudio(from: audioURL)
-                }
+            // 3. If it's new (or the same but marked unplayed/un-notified), trigger the notification.
+            if !self.wasPlayed(for: guardianId) {
+                // Mark as notified/played *for this guardian's message*
+                self.setWasPlayed(true, for: guardianId)
+                
+                notifier?.notifyNewMessage(audioURL: audioURL, senderName: senderName)
+                
+                print("🔊 New voice message detected from \(senderName) → triggering alert…")
             }
         }.resume()
-    }
-
-    private func playAudio(from urlString: String) {
-        guard let url = URL(string: urlString) else { return }
-        player = AVPlayer(url: url)
-        player?.play()
     }
 }
 

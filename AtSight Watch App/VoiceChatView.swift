@@ -1,15 +1,22 @@
 // EDIT BY RIYAM: Modified to accept guardianId/names as parameters to support multi-guardian chats. Removed internal @State loading for IDs.
+// UPDATED BY RIYAM: Integrated MessageNotifier for universal popup and applied new color requirements (Req 1 & 3).
+// UPDATED BY RIYAM: Corrected header colors.
+// UPDATED BY RIYAM: ADDED Last Messages button to chat page with counter badge, and adjusted size to match profile icon.
 
 import SwiftUI
 import AVFoundation
 import WatchKit
 
+// Re-using the MessageNotifier class from HomeView for notification handling inside chat
+private let messageNotifier = MessageNotifier.shared
+
 struct VoiceChatView: View {
-    // ✅ Parameters passed from HomeView
+    @ObservedObject private var messageNotifier = MessageNotifier.shared
+    
     var guardianId: String
     var childId: String
     var childName: String
-    var parentName: String
+    var parentName: String // هذا هو المفتاح لتصفية الرسائل
 
     @State private var recorder: AVAudioRecorder?
     @State private var player: AVPlayer?
@@ -17,59 +24,118 @@ struct VoiceChatView: View {
     @State private var audioURL: URL?
     @State private var timer: Timer?
     
-    // Shared playback tracking
-    private var lastURL: String? {
-        get { UserDefaults.standard.string(forKey: "lastPlayedVoiceURL") }
-        set { UserDefaults.standard.set(newValue, forKey: "lastPlayedVoiceURL") }
+    // MARK: - Style (Requirement 3 & Chat Header Color Fixes)
+    private let bgColor   = Color(red: 0.965, green: 0.975, blue: 1.00)
+    private let buttons   = Color("Buttons")
+    private let brandBlue = Color("Blue")
+
+    // --- NEW: Per-Guardian Tracking Helpers (Same as HomeView 2) ---
+    private func lastURL() -> String? {
+        return UserDefaults.standard.string(forKey: "lastPlayedVoiceURL_\(guardianId)")
     }
 
-    private var wasPlayed: Bool {
-        get { UserDefaults.standard.bool(forKey: "lastPlayedVoicePlayed") }
-        set { UserDefaults.standard.set(newValue, forKey: "lastPlayedVoicePlayed") }
+    private func setLastURL(_ url: String) {
+        UserDefaults.standard.set(url, forKey: "lastPlayedVoiceURL_\(guardianId)")
+    }
+    
+    private func wasPlayed() -> Bool {
+        return UserDefaults.standard.bool(forKey: "lastPlayedVoicePlayed_\(guardianId)")
+    }
+
+    private func setWasPlayed(_ played: Bool) {
+        UserDefaults.standard.set(played, forKey: "lastPlayedVoicePlayed_\(guardianId)")
+    }
+    // ----------------------------------------------------------------
+    
+    // ✅ NEW: Computed property to get the unheard count SPECIFICALLY for this guardian.
+    private var unheardCountForThisGuardian: Int {
+        // نستخدم اسم الوصي الحالي parentName لتصفية قائمة الانتظار العالمية
+        return messageNotifier.getUnheardCount(for: parentName)
     }
 
     var body: some View {
-        VStack(spacing: 12) {
-            // Header
-            HStack(spacing: 8) {
-                Image(systemName: "person.circle.fill")
-                    .resizable()
-                    .frame(width: 28, height: 28)
-                    .foregroundColor(.blue)
-                Text(parentName)
-                    .font(.system(size: 16, weight: .medium))
+        // MARK: Apply Background Color (Requirement 3)
+        ZStack {
+            bgColor.ignoresSafeArea()
+            
+            VStack(spacing: 12) {
+                // MARK: Header (Name and Icon Color Fixes, and Last Messages Button)
+                HStack(spacing: 8) {
+                    Image(systemName: "person.circle.fill")
+                        .resizable()
+                        .frame(width: 28, height: 28) // Profile Icon Size
+                        .foregroundColor(brandBlue)
+                    Text(parentName)
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundColor(.black) // Name in Black
+                    
+                    Spacer()
+                    
+                    // MARK: Last Messages Button (Size Adjusted to 28x28)
+                    Button(action: {
+                        // ✅ MODIFIED: استدعاء الدالة المُعدلة وتمرير اسم الوصي الحالي (ParentName)
+                        messageNotifier.playQueueOrLatest(for: parentName)
+                    }) {
+                        ZStack {
+                            Image(systemName: "message.circle.fill")
+                                .resizable()
+                                .frame(width: 28, height: 28) // Matched Profile Icon Size
+                                .foregroundColor(buttons)
+                            
+                            // Counter Badge (The red circle is conditional)
+                            // --- MODIFIED: Show badge using the SPECIFIC guardian count ---
+                            if unheardCountForThisGuardian > 0 {
+                                Text("\(unheardCountForThisGuardian)")
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundColor(.white)
+                                    .frame(width: 14, height: 14)
+                                    .background(Circle().fill(Color.red))
+                                    .offset(x: 10, y: -10)
+                            }
+                            // ---------------------------------------------
+                        }
+                    }
+                    .buttonStyle(.plain)
+
+                }
+                .padding(.horizontal)
+                .padding(.top, 4)
+
+                Spacer()
+
+                // Mic Button
+                ZStack {
+                    // MARK: Mic Row Background Color (Requirement 3)
+                    Circle()
+                        .fill(isRecording ? Color.red : buttons.opacity(0.8)) // Use buttons color
+                        .frame(width: 80, height: 80)
+                        .shadow(radius: 5)
+                        .overlay(
+                            Image(systemName: "mic.fill")
+                                .font(.system(size: 32))
+                                .foregroundColor(.white)
+                        )
+                        .onTapGesture {
+                            isRecording ? stopRecording() : startRecording()
+                        }
+                        .scaleEffect(isRecording ? 1.2 : 1.0)
+                        .animation(.easeInOut(duration: 0.2), value: isRecording)
+                }
+
                 Spacer()
             }
-            .padding(.horizontal)
-            .padding(.top, 4)
-
-            Spacer()
-
-            // Mic Button
-            ZStack {
-                Circle()
-                    .fill(isRecording ? Color.red : Color.green.opacity(0.8))
-                    .frame(width: 80, height: 80)
-                    .shadow(radius: 5)
-                    .overlay(
-                        Image(systemName: "mic.fill")
-                            .font(.system(size: 32))
-                            .foregroundColor(.white)
-                    )
-                    .onTapGesture {
-                        isRecording ? stopRecording() : startRecording()
-                    }
-                    .scaleEffect(isRecording ? 1.2 : 1.0)
-                    .animation(.easeInOut(duration: 0.2), value: isRecording)
-            }
-
-            Spacer()
         }
         .onAppear {
             startAutoFetch()
         }
         .onDisappear {
             timer?.invalidate()
+        }
+        // MARK: New Message Overlay (Ensuring popup appears in chat)
+        .overlay {
+            if messageNotifier.isMessageAlertActive {
+                MessagePopupView(notifier: messageNotifier)
+            }
         }
     }
 
@@ -126,19 +192,21 @@ struct VoiceChatView: View {
         APIHelper.shared.post(to: url.absoluteString, body: body)
     }
 
-    // MARK: - Fetch
+    // MARK: - Fetch (MODIFIED to use per-guardian tracking)
     private func startAutoFetch() {
         timer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { _ in
             fetchLatestMessage()
         }
     }
 
+    // VoiceChatView.swift (Inside struct VoiceChatView)
     private func fetchLatestMessage() {
         guard let url = URL(string:
             "https://getvoicemessagesapi-7gq4boqq6a-uc.a.run.app?guardianId=\(guardianId)&childId=\(childId)&limit=1"
         ) else { return }
 
-        URLSession.shared.dataTask(with: url) { data, _, _ in
+        // NOTE: [self] is used here instead of [weak self] because VoiceChatView is a struct.
+        URLSession.shared.dataTask(with: url) { [self] data, _, _ in
             guard let data,
                   let json = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]],
                   let latest = json.first,
@@ -146,27 +214,28 @@ struct VoiceChatView: View {
                   let sender = latest["sender"] as? String,
                   sender == "phone" else { return }
 
-            if self.lastURL == audioURL, self.wasPlayed { return }
+            let senderName = latest["senderName"] as? String ?? "Guardian"
+            
+            // --- UPDATED LOGIC (using per-guardian tracking helpers) ---
+            let currentLastURL = self.lastURL()
+            let currentWasPlayed = self.wasPlayed()
 
-            if self.lastURL != audioURL {
+            if currentLastURL == audioURL && currentWasPlayed { return }
+
+            if currentLastURL != audioURL {
+                self.setLastURL(audioURL)
+                self.setWasPlayed(false)
+                
+                // ✅ Update the GLOBAL last played URL for fallback playback
                 UserDefaults.standard.set(audioURL, forKey: "lastPlayedVoiceURL")
-                UserDefaults.standard.set(false, forKey: "lastPlayedVoicePlayed")
             }
 
-            let wasPlayed = UserDefaults.standard.bool(forKey: "lastPlayedVoicePlayed")
-            if !wasPlayed {
-                UserDefaults.standard.set(true, forKey: "lastPlayedVoicePlayed")
-                WKInterfaceDevice.current().play(.notification)
-                DispatchQueue.main.async {
-                    playAudio(from: audioURL)
-                }
+            if !self.wasPlayed() {
+                self.setWasPlayed(true)
+                
+                messageNotifier.notifyNewMessage(audioURL: audioURL, senderName: senderName)
             }
+            // ---------------------
         }.resume()
-    }
-
-    private func playAudio(from urlString: String) {
-        guard let url = URL(string: urlString) else { return }
-        player = AVPlayer(url: url)
-        player?.play()
     }
 }
