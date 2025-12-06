@@ -205,6 +205,7 @@ struct HomeView_Watch: View {
     @StateObject private var haltManager = HaltReceiver.shared
     // ✅ NEW: observe HeartRateMonitor so we can show the off-wrist popup
     @StateObject private var heartRateMonitor = HeartRateMonitor.shared
+    @StateObject private var messageNotifier = MessageNotifier.shared
     
     @State private var showSOSPopup = false
     @State private var selectedGuardianId: String?
