@@ -71,76 +71,79 @@ final class HaltReceiver: NSObject, ObservableObject { // ✅ Made ObservableObj
     }
     
     /**
-     * Performs the GET request to the cloud function.
-     */
-    private func checkForHaltSignal() {
-        guard let guardianId = UserDefaults.standard.string(forKey: "guardianId"),
-              let childId = UserDefaults.standard.string(forKey: "currentChildId"),
-              !guardianId.isEmpty, !childId.isEmpty else {
-            print("🛑 [HaltReceiver] Missing guardianId or childId. Polling paused.")
-            return
-        }
-        
-        guard var components = URLComponents(string: API.checkHaltStatus) else {
-            print("❌ [HaltReceiver] Invalid API.checkHaltStatus URL.")
-            return
-        }
-        
-        components.queryItems = [
-            URLQueryItem(name: "guardianId", value: guardianId),
-            URLQueryItem(name: "childId", value: childId),
-            URLQueryItem(name: "lastSeenTs", value: String(lastSeenAlertTs))
-        ]
-        
-        guard let url = components.url else {
-            print("❌ [HaltReceiver] Failed to build URL with components.")
-            return
-        }
-        
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        request.addValue("application/json", forHTTPHeaderField: "Accept")
-
-        print("📡 [HaltReceiver] Checking for HALT signal at \(url.absoluteString)")
-        
-        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
-            guard let self = self else { return }
-            
-            if let error = error {
-                print("❌ [HaltReceiver] Network error: \(error.localizedDescription)")
-                return
-            }
-            
-            guard let data = data else { return }
-            
-            do {
-                if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                    
-                    if let status = json["status"] as? String, status == "found",
-                       let alert = json["alert"] as? [String: Any],
-                       let newTs = alert["ts"] as? TimeInterval {
-                        
-                        print("🚨 [HaltReceiver] HALT SIGNAL DETECTED!")
-                        
-                        // Only trigger if a newer timestamp is found
-                        if newTs > self.lastSeenAlertTs {
-                            self.lastSeenAlertTs = newTs
-                            // UI update must be on the main thread
-                            DispatchQueue.main.async {
-                                self.triggerHaltSignal()
-                            }
-                        }
-                    } else {
-                        print("✅ [HaltReceiver] No new HALT signal found.")
+         * Iterates through all linked guardians and checks for HALT signals from each.
+         */
+        private func checkForHaltSignal() {
+            // Access PairingState on the Main Actor to get the list of all guardians
+            Task { @MainActor in
+                let guardians = PairingState.shared.linkedGuardianIDs
+                let childMap = PairingState.shared.guardianChildIDs
+                
+                if guardians.isEmpty {
+                    print("🛑 [HaltReceiver] No linked guardians to poll.")
+                    return
+                }
+                
+                // Loop through EVERY guardian, not just the first one
+                for guardianId in guardians {
+                    // Get the child ID specifically for this guardian relation
+                    if let childId = childMap[guardianId] {
+                        // Check status for this specific guardian-child pair
+                        self.checkHaltStatusFor(guardianId: guardianId, childId: childId)
                     }
                 }
-            } catch {
-                if let responseString = String(data: data, encoding: .utf8) {
-                    print("❌ [HaltReceiver] JSON parsing error. Got: \(responseString)")
-                }
             }
-        }.resume()
-    }
+        }
+
+        /**
+         * Performs the GET request for a specific guardian/child pair.
+         */
+        private func checkHaltStatusFor(guardianId: String, childId: String) {
+            guard var components = URLComponents(string: API.checkHaltStatus) else { return }
+            
+            components.queryItems = [
+                URLQueryItem(name: "guardianId", value: guardianId),
+                URLQueryItem(name: "childId", value: childId),
+                URLQueryItem(name: "lastSeenTs", value: String(lastSeenAlertTs))
+            ]
+            
+            guard let url = components.url else { return }
+            
+            var request = URLRequest(url: url)
+            request.httpMethod = "GET"
+            request.addValue("application/json", forHTTPHeaderField: "Accept")
+
+            // print("📡 Checking HALT for guardian: \(guardianId)") // Optional debug log
+            
+            URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+                guard let self = self else { return }
+                
+                if error != nil { return }
+                guard let data = data else { return }
+                
+                do {
+                    if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                        
+                        if let status = json["status"] as? String, status == "found",
+                           let alert = json["alert"] as? [String: Any],
+                           let newTs = alert["ts"] as? TimeInterval {
+                            
+                            // Check timestamp logic
+                            if newTs > self.lastSeenAlertTs {
+                                print("🚨 [HaltReceiver] HALT SIGNAL DETECTED from guardian: \(guardianId)!")
+                                self.lastSeenAlertTs = newTs
+                                
+                                DispatchQueue.main.async {
+                                    self.triggerHaltSignal()
+                                }
+                            }
+                        }
+                    }
+                } catch {
+                    print("❌ [HaltReceiver] JSON parsing error for \(guardianId)")
+                }
+            }.resume()
+        }
     
     // MARK: - UI State & Haptic Management
     

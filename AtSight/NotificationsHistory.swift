@@ -37,63 +37,6 @@ extension NotificationItem {
         return isSafeZone != nil && (event == nil || event == "zone_alert")
     }
     
-    // Simple helper to grab text between two markers
-    private func extractBetween(_ text: String, start: String, end: String) -> String? {
-        guard let startRange = text.range(of: start) else { return nil }
-        let substringFromStart = text[startRange.upperBound...]
-        guard let endRange = substringFromStart.range(of: end) else { return nil }
-        let result = substringFromStart[..<endRange.lowerBound]
-        let trimmed = result.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : String(trimmed)
-    }
-    
-    // Try to get child's name either from Firestore field or from the original title
-    private var childLabel: String {
-        if let childName = childName, !childName.isEmpty {
-            return childName
-        }
-        if let parsed = extractBetween(title, start: "Child '", end: "'") {
-            return parsed
-        }
-        return "Child"
-    }
-    
-    // Try to get zone name either from Firestore field or from the original title
-    private var zoneLabel: String {
-        if let zoneName = zoneName, !zoneName.isEmpty {
-            return zoneName
-        }
-        if let parsed = extractBetween(title, start: "zone: '", end: "'") {
-            return parsed
-        }
-        return "Zone"
-    }
-    
-    // Shorter, prettier title just for UI (but keep child & zone name)
-    var displayTitle: String {
-        guard isZoneAlert else { return title }
-        
-        let lower = title.lowercased()
-        if lower.contains("entered the danger zone") {
-            return "\(childLabel) entered '\(zoneLabel)' zone"
-        } else if lower.contains("exited the safe zone") {
-            return "\(childLabel) left '\(zoneLabel)' zone"
-        } else {
-            return "\(childLabel) - \(zoneLabel) alert"
-        }
-    }
-    
-    // Shorter, cleaner body for zone alerts
-    var displayBody: String {
-        guard isZoneAlert else { return body }
-        
-        var text = body
-        if text.hasPrefix("Info: ") {
-            text = String(text.dropFirst("Info: ".count))
-        }
-        return text
-    }
-    
     // MARK: Colors & Icons
     
     var indicatorColor: Color {
@@ -143,7 +86,7 @@ extension NotificationItem {
         if let event = event {
             switch event {
             case "watch_removed":
-                return "applewatch.slash"
+                return "heart.slash"
             case "battery_low":
                 return "battery.25"
             case "sos_alert":
@@ -281,10 +224,11 @@ struct NotificationRow: View {
 
                         // Title + Date on right
                         HStack(alignment: .firstTextBaseline) {
-                            Text(notification.displayTitle)
-                                .font(.system(size: 16, weight: .medium))  // smaller & calmer
+                            Text(notification.title) // ✅ Using raw DB title
+                                .font(.system(size: 16, weight: .medium))
                                 .foregroundColor(Color("BlackFont"))
-                                .lineLimit(2)
+                                // Removed .lineLimit(2) to show full text
+                                .fixedSize(horizontal: false, vertical: true) // Ensures text expands vertically
 
                             Spacer(minLength: 6)
 
@@ -294,7 +238,7 @@ struct NotificationRow: View {
                                 .lineLimit(1)
                         }
 
-                        Text(notification.displayBody)
+                        Text(notification.body) // ✅ Using raw DB body
                             .font(.system(size: 14))
                             .foregroundColor(Color("NotificationBody"))
                             .fixedSize(horizontal: false, vertical: true)
@@ -311,7 +255,6 @@ struct NotificationRow: View {
         .padding(.bottom, 6) // <- more space between cards
     }
 }
-
 
 #Preview {
     NotificationsHistory()

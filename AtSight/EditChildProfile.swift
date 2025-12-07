@@ -1,8 +1,8 @@
 //
-//  EditChildProfile.swift
-//  Atsight
+//  EditChildProfile.swift
+//  Atsight
 //
-//  Created by Najd Alsabi on 21/04/2025.
+//  Created by Najd Alsabi on 21/04/2025.
 //
 
 import SwiftUI
@@ -31,6 +31,14 @@ struct EditChildProfile: View {
     @State private var isDeleting = false
     @State private var deleteError: String?
     
+    // ✅ New Unlink state variables
+    @State private var isUnlinking = false
+    @State private var showUnlinkSuccess = false
+    @State private var unlinkError: String?
+    
+    // ✅ New state for Unlink Confirmation
+    @State private var showUnlinkConfirm = false
+    
     // Original values to detect changes
     @State private var originalName: String = ""
     @State private var originalColor: String = ""
@@ -39,8 +47,14 @@ struct EditChildProfile: View {
     let colors: [Color] = [.red, .green, .blue, .yellow, .orange, .purple, .pink, .brown, .gray]
     let animalIcons = ["penguin", "giraffe", "butterfly", "fox", "deer", "tiger", "whale", "turtle", "owl", "elephant", "frog", "hamster"]
     
+    // Helper to check current link status
+    private var isChildLinked: Bool {
+        return UserDefaults.standard.bool(forKey: "linked_\(child.id)")
+    }
+    
     private var canSave: Bool {
-        if isSaving || isDeleting { return false }
+        // Check for the new isUnlinking state
+        if isSaving || isDeleting || isUnlinking { return false }
         
         let trimmedName = child.name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedName.isEmpty else { return false }
@@ -60,7 +74,16 @@ struct EditChildProfile: View {
                 nameField
                 colorPickerSection
                 navigationLinksSection
-                saveButton
+                
+                // ⬅️ UPDATED: Only show save button if canSave is true
+                if canSave {
+                    saveButton
+                }
+                
+                // ✅ Added new button
+                deleteWatchLinkButton
+                    .padding(.top, 10)
+                
                 deleteButton
             }
             .padding()
@@ -76,23 +99,32 @@ struct EditChildProfile: View {
         }
         .overlay(
             Group {
-                if showSuccessMessage || showDeleteSuccessMessage {
+                // Check for showUnlinkSuccess
+                if showSuccessMessage || showDeleteSuccessMessage || showUnlinkSuccess {
                     ZStack {
                         Color.black.opacity(0.2).ignoresSafeArea()
                         
                         VStack(spacing: 10) {
-                            Image(systemName: "checkmark.circle.fill")
+                            Image(systemName: showUnlinkSuccess ? "trash.circle.fill" : "checkmark.circle.fill")
                                 .font(.system(size: 40))
-                                .foregroundColor(.green)
+                                .foregroundColor(showUnlinkSuccess ? .red : .green)
                             
-                            Text(showDeleteSuccessMessage ? "Child deleted" : "Changes saved")
+                            Text(
+                                showUnlinkSuccess
+                                ? "Watch link deleted"
+                                : (showDeleteSuccessMessage ? "Child deleted" : "Changes saved")
+                            )
                                 .font(.headline)
                                 .foregroundColor(Color("BlackFont"))
                             
                             Text(
-                                showDeleteSuccessMessage
-                                ? "The child profile has been removed."
-                                : "Your changes have been saved."
+                                showUnlinkSuccess
+                                ? "The watch link has been removed."
+                                : (
+                                    showDeleteSuccessMessage
+                                    ? "The child profile has been removed."
+                                    : "Your changes have been saved."
+                                )
                             )
                             .font(.subheadline)
                             .foregroundColor(Color("ColorGray"))
@@ -106,9 +138,10 @@ struct EditChildProfile: View {
                                         radius: 10, x: 0, y: 4)
                         )
                     }
+                    // Include new state in animation
                     .transition(.opacity)
                     .animation(.easeInOut(duration: 0.25),
-                               value: showSuccessMessage || showDeleteSuccessMessage)
+                               value: showSuccessMessage || showDeleteSuccessMessage || showUnlinkSuccess)
                 }
             }
         )
@@ -126,20 +159,34 @@ struct EditChildProfile: View {
         } message: {
             Text("This will remove the child and all related data (live location, history, voice files). This action cannot be undone.")
         }
+        // ✅ New: Confirm unlink
+        .alert("Unlink Watch?", isPresented: $showUnlinkConfirm) { // ⬅️ UPDATED: Text changed
+            Button("Cancel", role: .cancel) { }
+            Button("Unlink", role: .destructive) { unlinkWatch() } // ⬅️ UPDATED: Text changed
+        } message: {
+            Text("This will remove the watch's connection to your account, disabling live location and chat features.") // ⬅️ UPDATED: Text changed
+        }
         // Delete error
         .alert("Delete failed", isPresented: .constant(deleteError != nil), actions: {
             Button("OK") { deleteError = nil }
         }, message: {
             Text(deleteError ?? "")
         })
+        // New Unlink error alert
+        .alert("Unlink failed", isPresented: .constant(unlinkError != nil), actions: {
+            Button("OK") { unlinkError = nil }
+        }, message: {
+            Text(unlinkError ?? "")
+        })
         // Delete overlay (while deleting)
         .overlay {
-            if isDeleting {
+            // Check for the new isUnlinking state and display correct text
+            if isDeleting || isUnlinking {
                 ZStack {
                     Color.black.opacity(0.2).ignoresSafeArea()
                     HStack(spacing: 12) {
                         ProgressView()
-                        Text("Deleting…")
+                        Text(isUnlinking ? "Unlinking…" : "Deleting…")
                     }
                     .padding(.vertical, 14)
                     .padding(.horizontal, 16)
@@ -214,9 +261,10 @@ struct EditChildProfile: View {
             Text("Name")
                 .font(.caption)
                 .foregroundColor(.gray)
+            // Disable if unlinking
             TextField("Enter name", text: $child.name)
                 .textFieldStyle(RoundedBorderTextFieldStyle())
-                .disabled(isSaving || isDeleting)
+                .disabled(isSaving || isDeleting || isUnlinking)
         }
     }
     
@@ -236,7 +284,8 @@ struct EditChildProfile: View {
             }
             .contentShape(Rectangle())
             .onTapGesture {
-                if !isSaving && !isDeleting {
+                // Disable if unlinking
+                if !isSaving && !isDeleting && !isUnlinking {
                     withAnimation { showingColorPicker.toggle() }
                 }
             }
@@ -268,8 +317,9 @@ struct EditChildProfile: View {
             navigationBox(title: "Authorized Guardians", systemImage: "person.2.fill", destination: AuthorizedGuardians(child: $child))
             navigationBox(title: "Customize Notifications", systemImage: "bell.badge", destination: CustomizeNotifications(child: $child))
         }
+        // Disable if unlinking
         .padding(.top)
-        .opacity(isSaving ? 0.6 : 1.0)
+        .opacity(isSaving || isUnlinking ? 0.6 : 1.0)
     }
     
     // MARK: - Save Button (consistent with EditProfileView)
@@ -279,11 +329,36 @@ struct EditChildProfile: View {
                 .fontWeight(.semibold)
                 .frame(maxWidth: .infinity)
                 .padding()
+                // The button will be invisible if canSave is false, but keep the color logic here just in case
                 .background(canSave ? Color("Blue") : Color("Blue").opacity(0.4))
                 .foregroundColor(.white)
                 .cornerRadius(12)
         }
         .disabled(!canSave)
+    }
+    
+    // MARK: - Delete Watch Link Button (New Section)
+    var deleteWatchLinkButton: some View {
+        Group {
+            if isChildLinked {
+                Button(role: .destructive) {
+                    // Action: Show confirmation alert
+                    showUnlinkConfirm = true
+                } label: {
+                    // ⬅️ UPDATED: Text changed
+                    Text(isUnlinking ? "Unlinking..." : "Unlink Watch")
+                        .bold()
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.orange.opacity(0.8)) // Using orange for distinction from child deletion
+                        .foregroundColor(.white)
+                        .cornerRadius(8)
+                }
+                .disabled(isSaving || isDeleting || isUnlinking)
+            } else {
+                EmptyView()
+            }
+        }
     }
     
     // MARK: - Delete Button
@@ -299,7 +374,8 @@ struct EditChildProfile: View {
                 .foregroundColor(.white)
                 .cornerRadius(8)
         }
-        .disabled(isSaving || isDeleting)
+        // Disable if unlinking
+        .disabled(isSaving || isDeleting || isUnlinking)
     }
     
     // MARK: - Back Button
@@ -330,7 +406,7 @@ struct EditChildProfile: View {
                     errorMessage = error.localizedDescription
                     showErrorAlert = true
                 } else {
-                    // ✅ Update original values (now “no change” state)
+                    // Update original values (now “no change” state)
                     originalName = child.name
                     originalColor = child.color
                     originalImageName = child.imageName ?? ""
@@ -345,6 +421,40 @@ struct EditChildProfile: View {
                     }
                 }
             }
+    }
+    
+    // MARK: - Unlink Watch (New Function)
+    func unlinkWatch() {
+        guard let guardianID = Auth.auth().currentUser?.uid else { return }
+        
+        isUnlinking = true
+        
+        let db = Firestore.firestore()
+        
+        // 1. Update the child document to set isWatchLinked = false
+        db.collection("guardians").document(guardianID).collection("children").document(child.id).updateData(["isWatchLinked": false]) { error in
+            
+            isUnlinking = false
+            if let error = error {
+                print("❌ Error unlinking: \(error.localizedDescription)")
+                self.unlinkError = error.localizedDescription
+            } else {
+                print("✅ Unlink successful. isWatchLinked set to false.")
+                
+                // 2. Update Local State
+                UserDefaults.standard.set(false, forKey: "linked_\(child.id)")
+                
+                // 3. Show success message
+                withAnimation {
+                    self.showUnlinkSuccess = true
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+                    withAnimation {
+                        self.showUnlinkSuccess = false
+                    }
+                }
+            }
+        }
     }
     
     // MARK: - Delete Child (with centered success message)
@@ -385,7 +495,7 @@ struct EditChildProfile: View {
                         }
                     }
                 
-                // ✅ Show delete success message, then dismiss
+                // Show delete success message, then dismiss
                 isDeleting = false
                 withAnimation {
                     showDeleteSuccessMessage = true

@@ -116,7 +116,8 @@ struct PairingView: View {
                     }
                 }
             }
-        }
+        }.background(Color("BgColor").ignoresSafeArea())   
+
     }
     
     // MARK: - QR Code Logic

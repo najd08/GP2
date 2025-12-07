@@ -7,6 +7,7 @@ import FirebaseAuth
 import FirebaseFirestore
 
 // MARK: - ChildDetailView
+
 struct ChildDetailView: View {
     @State var child: Child
     @Environment(\.presentationMode) var presentationMode
@@ -15,146 +16,120 @@ struct ChildDetailView: View {
 
     @State private var isLinked: Bool = false
     @State private var showLinkWarning: Bool = false
-    
-    // ✅ New state to hold the fetched name
     @State private var realParentName: String = ""
 
     let columns = [GridItem(.flexible()), GridItem(.flexible())]
 
     var body: some View {
         ZStack {
-            VStack {
-                // MARK: Header
+            Color("BgColor").ignoresSafeArea()
+
+            VStack(spacing: 0) {
+
+                // ====== BACK BUTTON ======
                 HStack {
-                    Button(action: {
-                        presentationMode.wrappedValue.dismiss()
-                    }) {
+                    Button(action: { presentationMode.wrappedValue.dismiss() }) {
                         Image(systemName: "chevron.left")
+                            .font(.system(size: 22, weight: .semibold))
                             .foregroundColor(Color("BlackFont"))
-                            .font(.system(size: 20, weight: .bold))
                     }
-
                     Spacer()
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 10)
 
-                    HStack(spacing: 6) {
-                        Text(child.name)
-                            .font(.largeTitle)
-                            .bold()
-                            .foregroundColor(Color("BlackFont"))
+                // ====== CURVED HEADER (Clickable) ======
+                NavigationLink(
+                    destination: EditChildProfile(guardianID: guardianID, child: $child)
+                ) {
+                    ZStack {
+                        VStack(spacing: 12) {
 
-                        if isLinked {
-                            Image(systemName: "link.circle.fill")
-                                .foregroundColor(Color("Blue"))
-                                .font(.title3)
-                                .accessibilityLabel("Linked")
+                            // ===== AVATAR CIRCLE =====
+                            ZStack {
+                                Circle()
+                                    .fill(Color.white)
+                                    .frame(width: 130, height: 130)
+
+                                Circle()
+                                    .stroke(Color("button"), lineWidth: 4)
+                                    .frame(width: 120, height: 120)
+
+                                // ===== AVATAR LOGIC =====
+                                if let avatar = child.imageName, !avatar.isEmpty {
+                                    Image(avatar)
+                                        .resizable()
+                                        .scaledToFill()
+                                        .frame(width: 90, height: 90)
+                                        .clipShape(Circle())
+                                } else {
+                                    Image(systemName: "person.fill")
+                                        .resizable()
+                                        .scaledToFit()
+                                        .frame(width: 55, height: 55)
+                                        .foregroundColor(Color("button"))
+                                }
+                            }
+                            .padding(.top, 30)
+
+                            Text(child.name)
+                                .font(.system(size: 22, weight: .semibold))
+                                .foregroundColor(Color("BlackFont"))
+                                .padding(.bottom, 50)
+                            Text("Tap to Edit profile") .font(.caption) .foregroundColor(.gray)
                         }
                     }
-
-                    Spacer()
-                    Spacer().frame(width: 24)
                 }
-                .padding()
-                .padding(.top, -10)
+                .buttonStyle(PlainButtonStyle())
 
                 ScrollView {
-                    
-                    linkButton()
-                        .padding(.horizontal)
-                        .padding(.top)
 
-                    LazyVGrid(columns: columns, spacing: 20) {
-                            
-                        if isLinked {
-                            NavigationLink(
-                                destination: VoiceChatPhone(
-                                    guardianId: guardianID,
-                                    childId: child.id,
-                                    childName: child.name
-                                )
-                            ) {
-                                gridButtonContent(
-                                    icon: "waveform.circle.fill",
-                                    title: "Voice Chat",
-                                    color: Color("ColorPurple")
-                                )
-                            }
-                        } else {
-                            Button(action: triggerLinkWarning) {
-                                gridButtonContent(
-                                    icon: "waveform.circle.fill",
-                                    title: "Voice Chat",
-                                    color: Color("ColorGray")
-                                )
-                            }
-                            .buttonStyle(PlainButtonStyle())
-                        }
-
-                        if isLinked {
-                            NavigationLink(destination: ChildLocationView(child: child)) {
-                                gridButtonContent(
-                                    icon: "location.fill",
-                                    title: "View Last Location",
-                                    color: Color("Blue")
-                                )
-                            }
-                        } else {
-                            Button(action: triggerLinkWarning) {
-                                gridButtonContent(
-                                    icon: "location.fill",
-                                    title: "View Last Location",
-                                    color: Color("ColorGray")
-                                )
-                            }
-                            .buttonStyle(PlainButtonStyle())
-                        }
-
-                        NavigationLink(destination: EditChildProfile(guardianID: guardianID, child: $child)) {
-                            gridButtonContent(icon: "figure.child.circle", title: "Child Profile", color: Color("ColorGreen"))
-                        }
-
-                        if isLinked {
-                            NavigationLink(destination: LocationHistoryView(childID: child.id)) {
-                                gridButtonContent(
-                                    icon: "clock.arrow.circlepath",
-                                    title: "Location History",
-                                    color: Color("ColorPurple")
-                                )
-                            }
-                        } else {
-                            Button(action: triggerLinkWarning) {
-                                gridButtonContent(
-                                    icon: "clock.arrow.circlepath",
-                                    title: "Location History",
-                                    color: Color("ColorGray")
-                                )
-                            }
-                            .buttonStyle(PlainButtonStyle())
-                        }
-
-                        NavigationLink(destination: AddZonePage(childID: child.id)) {
-                            gridButtonContent(icon: "mappin.and.ellipse", title: "Zones Setup", color: Color("ColorRed"))
-                        }
-                        
-                       
+                    // ===============================
+                    // MARK: SHOW LINK BUTTON ONLY IF NOT LINKED
+                    // ===============================
+                    if !isLinked {
+                        linkWatchButton()
+                            .padding(.horizontal)
+                            .padding(.top, 10)
                     }
-                    .padding()
+
+                    // ===============================
+                    // MARK: SHOW GRID ONLY IF LINKED
+                    // ===============================
+                    if isLinked {
+                        LazyVGrid(columns: columns, spacing: 20) {
+
+                            // View Last Location
+                            NavigationLink(destination: ChildLocationView(child: child)) {
+                                gridButtonContent(icon: "location.fill", title: "View Last Location", color: Color("Blue"))
+                            }
+
+                            // Voice Chat
+                            NavigationLink(destination: VoiceChatPhone(
+                                guardianId: guardianID,
+                                childId: child.id,
+                                childName: child.name
+                            )) {
+                                gridButtonContent(icon: "waveform.circle.fill", title: "Voice Chat", color: Color("ColorPurple"))
+                            }
+
+                            // Zones Setup
+                            NavigationLink(destination: AddZonePage(childID: child.id)) {
+                                gridButtonContent(icon: "mappin.and.ellipse", title: "Zones Setup", color: Color("ColorRed"))
+                            }
+
+                            // Location History
+                            NavigationLink(destination: LocationHistoryView(childID: child.id)) {
+                                gridButtonContent(icon: "clock.arrow.circlepath", title: "Location History", color: Color("ColorPurple"))
+                            }
+                        }
+                        .padding(.horizontal)
+                        .padding(.top, 10)
+                    }
                 }
-                .background(Color("BgColor"))
-                .cornerRadius(15)
                 .id(viewRefreshToken)
             }
-            .background(Color("BgColor").ignoresSafeArea())
-            .navigationBarHidden(true)
-            .navigationBarBackButtonHidden(true)
-            .onAppear {
-                guardianID = Auth.auth().currentUser?.uid ?? ""
-                isLinked = UserDefaults.standard.bool(forKey: "linked_\(child.id)")
-                viewRefreshToken = UUID()
-                
-                // ✅ Fetch the real parent name immediately
-                fetchParentName()
-            }
-            
+
             if showLinkWarning {
                 Text("This feature requires linking a watch.")
                     .font(.callout)
@@ -168,81 +143,59 @@ struct ChildDetailView: View {
                     .zIndex(10)
             }
         }
+        .onAppear {
+            guardianID = Auth.auth().currentUser?.uid ?? ""
+            isLinked = UserDefaults.standard.bool(forKey: "linked_\(child.id)")
+            viewRefreshToken = UUID()
+            fetchParentName()
+        }
+        .navigationBarHidden(true)
+        .navigationBarBackButtonHidden(true)
     }
-    
-    // ✅ Helper to fetch name from Firestore
+
+
+    // ===========================
+    // MARK: - HELPERS
+    // ===========================
+
     private func fetchParentName() {
         guard let uid = Auth.auth().currentUser?.uid else { return }
-        let db = Firestore.firestore()
-        db.collection("guardians").document(uid).getDocument { snapshot, error in
-            if let data = snapshot?.data(), let name = data["FirstName"] as? String {
+        Firestore.firestore().collection("guardians").document(uid).getDocument { snapshot, _ in
+            if let data = snapshot?.data(),
+               let name = data["FirstName"] as? String {
                 self.realParentName = name
-                print("✅ Fetched parent name: \(name)")
             } else {
-                // Fallback if name is missing
                 self.realParentName = "Parent"
             }
         }
     }
-    
+
     private func triggerLinkWarning() {
         withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
             showLinkWarning = true
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
             withAnimation(.easeOut(duration: 0.4)) {
                 showLinkWarning = false
             }
         }
     }
-    
+
     @ViewBuilder
-    private func linkButton() -> some View {
-        if isLinked {
-            Button(action: {
-                guard let uid = Auth.auth().currentUser?.uid else { return }
-                let db = Firestore.firestore()
-                
-                print("🔓 Unlinking watch for child: \(child.name) (ID: \(child.id))")
-                
-                // 1. Update the child document to set isWatchLinked = false
-                // This tells the API polling on the watch that the link is invalid without deleting the child.
-                db.collection("guardians").document(uid).collection("children").document(child.id).updateData(["isWatchLinked": false]) { error in
-                    if let error = error {
-                        print("❌ Error unlinking: \(error.localizedDescription)")
-                    } else {
-                        print("✅ Unlink successful. isWatchLinked set to false.")
-                    }
-                }
-                
-                // 2. Update Local State
-                UserDefaults.standard.set(false, forKey: "linked_\(child.id)")
-                isLinked = false
-                
-            }) {
-                VStack {
-                    Image(systemName: "square.slash")
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 50, height: 50)
-                        .foregroundColor(.red)
-                    Text("Unlink Watch")
-                        .font(.headline)
-                        .foregroundColor(Color("BlackFont"))
-                        .multilineTextAlignment(.center)
-                }
-                .frame(height: 140)
-                .frame(maxWidth: .infinity)
-                .background(Color("BgColor"))
-                .cornerRadius(20)
-                .shadow(color: Color("BlackFont").opacity(0.3), radius: 10)
-            }
-        } else {
+    private func linkWatchButton() -> some View {
+        VStack(spacing: 16) {
+
+            // ----- Text above button -----
+            Text("Connect to your child's watch")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundColor(Color("BlackFont"))
+                .multilineTextAlignment(.center)
+
+            // ----- OLD ORIGINAL BUTTON (unchanged) -----
             NavigationLink(
                 destination: ParentLinkView(
                     childId: child.id,
                     childName: child.name,
-                    // ✅ Use the real fetched name, or fallback to "Parent" if still loading
                     parentName: realParentName.isEmpty ? "Parent" : realParentName
                 )
             ) {
@@ -252,19 +205,22 @@ struct ChildDetailView: View {
                         .scaledToFit()
                         .frame(width: 50, height: 50)
                         .foregroundColor(Color("Blue"))
+
                     Text("Link Watch")
                         .font(.headline)
                         .foregroundColor(Color("BlackFont"))
-                        .multilineTextAlignment(.center)
                 }
                 .frame(height: 140)
                 .frame(maxWidth: .infinity)
-                .background(Color("BgColor"))
+                .background(Color.white)
                 .cornerRadius(20)
-                .shadow(color: Color("BlackFont").opacity(0.3), radius: 10)
+                .shadow(color: Color.black.opacity(0.1), radius: 10)
             }
         }
+        .padding(.horizontal)
     }
+
+
 
     @ViewBuilder
     private func gridButtonContent(icon: String, title: String, color: Color) -> some View {
@@ -274,144 +230,197 @@ struct ChildDetailView: View {
                 .scaledToFit()
                 .frame(width: 50, height: 50)
                 .foregroundColor(color)
+
             Text(title)
                 .font(.headline)
                 .foregroundColor(Color("BlackFont"))
-                .multilineTextAlignment(.center)
         }
         .frame(width: (UIScreen.main.bounds.width / 2) - 30, height: 140)
-        .background(Color("BgColor"))
-        .cornerRadius(20)
-        .shadow(color: Color("BlackFont").opacity(0.3), radius: 10)
+        .background(Color.white)
+        .cornerRadius(22)
+        .shadow(color: Color.black.opacity(0.1), radius: 8)
     }
 }
 
 
+
 // MARK: - HomeView
+
 struct HomeView: View {
+
     @Binding var selectedChild: Child?
     @Binding var expandedChild: Child?
+
     @State private var firstName: String = "Guest"
     @State private var children: [Child] = []
+    @State private var showAddChildGuide: Bool = true   // <— Spotlight
 
     var body: some View {
         NavigationStack {
-            VStack(alignment: .leading) {
-                HStack {
-                    Spacer()
-                    Image("Image 1")
-                        .resizable()
-                        .frame(width: 140, height: 130)
-                    Spacer()
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.top)
+            ZStack {
 
-                VStack(alignment: .leading, spacing: 20) {
-                    Text("Hello \(firstName)")
-                        .font(.largeTitle).bold()
-                        .foregroundColor(Color("Blue"))
-                        .padding(.top, 20)
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("View your kids' locations.")
-                            .font(.title3)
-                            .foregroundColor(Color("BlackFont"))
-                            .fontWeight(.medium)
-
-                        Text("Stay connected and informed about their well-being.")
-                            .font(.body)
-                            .foregroundColor(Color("ColorGray"))
-                            .lineLimit(2)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-
+                VStack(alignment: .leading) {
                     HStack {
-                        NavigationLink(destination: AddChildView(fetchChildrenCallback: fetchChildrenFromFirestore)) {
-                            Text("Add child")
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 10)
-                                .foregroundColor(Color("Blue"))
-                                .background(Color("BgColor"))
-                                .cornerRadius(25)
-                                .shadow(radius: 5)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 25)
-                                        .stroke(Color("ColorGray"), lineWidth: 1)
-                                )
-                        }
-                        .padding(.leading, 250)
+                        Spacer()
+                        Image("Image 1")
+                            .resizable()
+                            .frame(width: 140, height: 130)
+                        Spacer()
                     }
+                    .frame(maxWidth: .infinity)
+                    .padding(.top)
 
-                    ScrollView {
-                        VStack(spacing: 15) {
-                            ForEach(children) { child in
-                                NavigationLink(destination: ChildDetailView(child: child)) {
-                                    ChildCardView(child: child, expandedChild: $expandedChild)
-                                        .padding(.top)
-                                }
-                                .onDisappear {
-                                    fetchChildrenFromFirestore()
+                    VStack(alignment: .leading, spacing: 20) {
+
+                        Text("Hello \(firstName)")
+                            .font(.largeTitle).bold()
+                            .foregroundColor(Color("Blue"))
+                            .padding(.top, 20)
+
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("View your kids' locations.")
+                                .font(.title3)
+                                .foregroundColor(Color("BlackFont"))
+                                .fontWeight(.medium)
+
+                            Text("Stay connected and informed about their well-being.")
+                                .font(.body)
+                                .foregroundColor(Color("ColorGray"))
+                        }
+
+                        // ===========================
+                        // ADD CHILD BUTTON
+                        // ===========================
+                        HStack {
+                            Spacer()
+                            NavigationLink(destination: AddChildView(fetchChildrenCallback: fetchChildrenFromFirestore)) {
+                                Text("Add child")
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 10)
+                                    .foregroundColor(Color("Blue"))
+                                    .background(Color.white)
+                                    .cornerRadius(25)
+                                    .shadow(color: .black.opacity(0.15), radius: 4)
+                            }
+                        }
+                        .padding(.trailing, 20)
+
+                        // ===========================
+                        // CHILD LIST
+                        // ===========================
+                        ScrollView {
+                            VStack(spacing: 15) {
+                                ForEach(children) { child in
+                                    NavigationLink(destination: ChildDetailView(child: child)) {
+                                        ChildCardView(child: child, expandedChild: $expandedChild)
+                                            .padding(.top)
+                                    }
+                                    .onDisappear {
+                                        fetchChildrenFromFirestore()
+                                    }
                                 }
                             }
                         }
+                        .padding(.top, 3)
                     }
-                    .padding(.top, 3)
-                }
-                .onAppear {
-                    fetchUserName()
-                    fetchChildrenFromFirestore()
+                    .onAppear {
+                        fetchUserName()
+                        fetchChildrenFromFirestore()
 
-                    if let uid = Auth.auth().currentUser?.uid {
-                        UserDefaults.standard.set(uid, forKey: "guardianID")
-                        print("✅ Updated guardianID in UserDefaults: \(uid)")
+                        if let uid = Auth.auth().currentUser?.uid {
+                            UserDefaults.standard.set(uid, forKey: "guardianID")
+                        }
                     }
-                    
-                    print("🔑 Logged in UID:", Auth.auth().currentUser?.uid ?? "No user")
-                    print("🟢 Stored guardianID:", UserDefaults.standard.string(forKey: "guardianID") ?? "❌ none")
                 }
+                .padding(.horizontal, 10)
+                .background(Color("BgColor").ignoresSafeArea())
 
+
+                // ================================================
+                // SPOTLIGHT OVERLAY — Highlight Add Child Button
+                // ================================================
+             
+                if showAddChildGuide && children.isEmpty {
+
+                    GeometryReader { geo in
+                        ZStack {
+
+                            // Dark Background
+                            Color.black.opacity(0.55)
+                                .ignoresSafeArea()
+
+                            // Spotlight Cutout Circle
+                            Circle()
+                                .frame(width: 140, height: 140)
+                                .position(
+                                    x: geo.size.width - 80,
+                                    y: 330
+                                )
+                                .blendMode(.destinationOut)
+
+                            VStack(spacing: 14) {
+
+                                Spacer().frame(height: 320)
+                                Text("Tap here to add your first child.")
+                                    .font(.system(size: 18, weight: .semibold))
+                                    .foregroundColor(.white)
+                                    .multilineTextAlignment(.center)
+                                    .padding(.horizontal, 30)
+
+                            }
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        }
+                        .compositingGroup()
+                        .onTapGesture { showAddChildGuide = false }
+                    }
+                }
             }
-            .padding(.horizontal, 10)
-            .background(Color("BgColor").ignoresSafeArea())
         }
     }
 
+    // ===================================================
+    // MARK: - Firestore Calls
+    // ===================================================
+
     func fetchChildrenFromFirestore() {
         guard let userId = Auth.auth().currentUser?.uid else { return }
+
         let db = Firestore.firestore()
-        db.collection("guardians").document(userId).collection("children").getDocuments { snapshot, error in
-            if let error = error {
-                print("Error fetching children: \(error.localizedDescription)")
-            } else {
-                DispatchQueue.main.async {
-                    self.children = snapshot?.documents.compactMap { doc in
-                        let data = doc.data()
-                        return Child(
-                            id: doc.documentID,
-                            name: data["name"] as? String ?? "Unknown",
-                            color: data["color"] as? String ?? "gray",
-                            imageName: data["imageName"] as? String
-                        )
-                    } ?? []
+        db.collection("guardians").document(userId).collection("children")
+            .getDocuments { snapshot, error in
+
+                if let error = error {
+                    print("Error fetching children: \(error.localizedDescription)")
+                } else {
+                    DispatchQueue.main.async {
+                        self.children = snapshot?.documents.compactMap { doc in
+                            let data = doc.data()
+                            return Child(
+                                id: doc.documentID,
+                                name: data["name"] as? String ?? "Unknown",
+                                color: data["color"] as? String ?? "gray",
+                                imageName: data["imageName"] as? String
+                            )
+                        } ?? []
+                    }
                 }
             }
-        }
     }
 
     func fetchUserName() {
         if let userId = Auth.auth().currentUser?.uid {
             let db = Firestore.firestore()
-            db.collection("guardians").document(userId).getDocument { document, _ in
-                if let document = document, document.exists {
-                    if let fetchedFirstName = document.data()?["FirstName"] as? String {
-                        firstName = fetchedFirstName
+            db.collection("guardians").document(userId)
+                .getDocument { document, _ in
+                    if let document = document, document.exists {
+                        firstName = document.data()?["FirstName"] as? String ?? "Guest"
                     }
                 }
-            }
         }
     }
 }
+
+
 
 #Preview("Home") {
     HomeView(selectedChild: .constant(nil), expandedChild: .constant(nil)).environmentObject(AppState())

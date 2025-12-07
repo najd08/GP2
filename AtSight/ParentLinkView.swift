@@ -43,7 +43,7 @@ struct ParentLinkView: View {
                 VStack(spacing: 20) {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 80))
-                        .foregroundColor(.white)
+                        .foregroundColor(Color("Blue"))
 
                     Text("Linked Successfully")
                         .font(.title)
