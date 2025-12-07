@@ -171,7 +171,7 @@ struct ParentLinkView: View {
 
         VStack(spacing: 20) {
 
-            Text("Enter the 6-digit PIN")
+            Text("Enter the PIN")
                 .font(.title3).bold()
 
             TextField("123456", text: $code)
@@ -192,14 +192,14 @@ struct ParentLinkView: View {
                     if isSending { ProgressView().tint(.white) }
                     Text("Link").bold()
                 }
-                .frame(maxWidth: .infinity)
-                .padding()
-                .background(isValidCode ? Color("button") : Color.gray)
                 .foregroundColor(.white)
-                .cornerRadius(12)
+                 .font(.headline)
+                 .padding(.vertical, 14)
+                 .frame(width: 250)     
+                 .background(isValidCode ? Color("button") : Color.gray)
+                 .cornerRadius(30)
             }
             .disabled(!isValidCode || isSending)
-
             Text(status)
                 .foregroundColor(status.contains("Invalid") || status.contains("Rejected") ? .red : .gray)
                 .font(.footnote)

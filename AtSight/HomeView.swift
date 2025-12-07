@@ -75,8 +75,9 @@ struct ChildDetailView: View {
                             Text(child.name)
                                 .font(.system(size: 22, weight: .semibold))
                                 .foregroundColor(Color("BlackFont"))
-                                .padding(.bottom, 50)
                             Text("Tap to Edit profile") .font(.caption) .foregroundColor(.gray)
+                                .padding(.bottom, 50)
+                            
                         }
                     }
                 }
@@ -212,7 +213,7 @@ struct ChildDetailView: View {
                 }
                 .frame(height: 140)
                 .frame(maxWidth: .infinity)
-                .background(Color.white)
+                .background(Color("CustomBackgroundSQ"))
                 .cornerRadius(20)
                 .shadow(color: Color.black.opacity(0.1), radius: 10)
             }
@@ -236,7 +237,7 @@ struct ChildDetailView: View {
                 .foregroundColor(Color("BlackFont"))
         }
         .frame(width: (UIScreen.main.bounds.width / 2) - 30, height: 140)
-        .background(Color.white)
+        .background(Color("CustomBackgroundSQ"))
         .cornerRadius(22)
         .shadow(color: Color.black.opacity(0.1), radius: 8)
     }
@@ -244,22 +245,23 @@ struct ChildDetailView: View {
 
 
 
+
 // MARK: - HomeView
-
 struct HomeView: View {
-
     @Binding var selectedChild: Child?
     @Binding var expandedChild: Child?
-
     @State private var firstName: String = "Guest"
     @State private var children: [Child] = []
-    @State private var showAddChildGuide: Bool = true   // <— Spotlight
+
+    // SHOW SPOTLIGHT ONLY ON FIRST TIME
+    @State private var hasSeenAddChildGuide = UserDefaults.standard.bool(forKey: "hasSeenAddChildGuide")
 
     var body: some View {
         NavigationStack {
             ZStack {
-
                 VStack(alignment: .leading) {
+                    
+                    // Top illustration
                     HStack {
                         Spacer()
                         Image("Image 1")
@@ -267,11 +269,10 @@ struct HomeView: View {
                             .frame(width: 140, height: 130)
                         Spacer()
                     }
-                    .frame(maxWidth: .infinity)
                     .padding(.top)
 
+                    // Greeting + description
                     VStack(alignment: .leading, spacing: 20) {
-
                         Text("Hello \(firstName)")
                             .font(.largeTitle).bold()
                             .foregroundColor(Color("Blue"))
@@ -286,28 +287,28 @@ struct HomeView: View {
                             Text("Stay connected and informed about their well-being.")
                                 .font(.body)
                                 .foregroundColor(Color("ColorGray"))
+                                .lineLimit(2)
                         }
 
-                        // ===========================
-                        // ADD CHILD BUTTON
-                        // ===========================
+                        // Add Child Button
                         HStack {
-                            Spacer()
                             NavigationLink(destination: AddChildView(fetchChildrenCallback: fetchChildrenFromFirestore)) {
                                 Text("Add child")
                                     .padding(.horizontal, 16)
                                     .padding(.vertical, 10)
                                     .foregroundColor(Color("Blue"))
-                                    .background(Color.white)
+                                    .background(Color("BgColor"))
                                     .cornerRadius(25)
-                                    .shadow(color: .black.opacity(0.15), radius: 4)
+                                    .shadow(radius: 5)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 25)
+                                            .stroke(Color("ColorGray"), lineWidth: 1)
+                                    )
                             }
+                            .padding(.leading, 250)
                         }
-                        .padding(.trailing, 20)
 
-                        // ===========================
-                        // CHILD LIST
-                        // ===========================
+                        // Children List
                         ScrollView {
                             VStack(spacing: 15) {
                                 ForEach(children) { child in
@@ -323,99 +324,99 @@ struct HomeView: View {
                         }
                         .padding(.top, 3)
                     }
-                    .onAppear {
-                        fetchUserName()
-                        fetchChildrenFromFirestore()
+                    .padding(.horizontal, 10)
+                }
+                .background(Color("BgColor").ignoresSafeArea())
+                .onAppear {
+                    fetchUserName()
+                    fetchChildrenFromFirestore()
 
-                        if let uid = Auth.auth().currentUser?.uid {
-                            UserDefaults.standard.set(uid, forKey: "guardianID")
-                        }
+                    if let uid = Auth.auth().currentUser?.uid {
+                        UserDefaults.standard.set(uid, forKey: "guardianID")
                     }
                 }
-                .padding(.horizontal, 10)
-                .background(Color("BgColor").ignoresSafeArea())
-
 
                 // ================================================
-                // SPOTLIGHT OVERLAY — Highlight Add Child Button
+                // SPOTLIGHT OVERLAY — appears only ONCE
                 // ================================================
-             
-                if showAddChildGuide && children.isEmpty {
-
+                if !hasSeenAddChildGuide && children.isEmpty {
                     GeometryReader { geo in
                         ZStack {
 
-                            // Dark Background
+                            // Dim background
                             Color.black.opacity(0.55)
                                 .ignoresSafeArea()
 
-                            // Spotlight Cutout Circle
+                            // Spotlight circle cut-out
                             Circle()
-                                .frame(width: 140, height: 140)
+                                .frame(width: 160, height: 160)
                                 .position(
                                     x: geo.size.width - 80,
                                     y: 330
                                 )
                                 .blendMode(.destinationOut)
 
+                            // Text BELOW the circle
                             VStack(spacing: 14) {
+                                Spacer().frame(height: 430)
 
-                                Spacer().frame(height: 320)
                                 Text("Tap here to add your first child.")
                                     .font(.system(size: 18, weight: .semibold))
                                     .foregroundColor(.white)
                                     .multilineTextAlignment(.center)
                                     .padding(.horizontal, 30)
-
                             }
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                         }
                         .compositingGroup()
-                        .onTapGesture { showAddChildGuide = false }
+                        .onTapGesture {
+                            hasSeenAddChildGuide = true
+                            UserDefaults.standard.set(true, forKey: "hasSeenAddChildGuide")
+                        }
                     }
                 }
             }
         }
     }
 
-    // ===================================================
-    // MARK: - Firestore Calls
-    // ===================================================
-
+    // MARK: - Fetching
     func fetchChildrenFromFirestore() {
         guard let userId = Auth.auth().currentUser?.uid else { return }
-
         let db = Firestore.firestore()
-        db.collection("guardians").document(userId).collection("children")
+
+        db.collection("guardians")
+            .document(userId)
+            .collection("children")
             .getDocuments { snapshot, error in
 
-                if let error = error {
-                    print("Error fetching children: \(error.localizedDescription)")
-                } else {
-                    DispatchQueue.main.async {
-                        self.children = snapshot?.documents.compactMap { doc in
-                            let data = doc.data()
-                            return Child(
-                                id: doc.documentID,
-                                name: data["name"] as? String ?? "Unknown",
-                                color: data["color"] as? String ?? "gray",
-                                imageName: data["imageName"] as? String
-                            )
-                        } ?? []
-                    }
-                }
+            if let error = error {
+                print("Error fetching children: \(error.localizedDescription)")
+                return
             }
+
+            DispatchQueue.main.async {
+                self.children = snapshot?.documents.compactMap { doc in
+                    let data = doc.data()
+                    return Child(
+                        id: doc.documentID,
+                        name: data["name"] as? String ?? "Unknown",
+                        color: data["color"] as? String ?? "gray",
+                        imageName: data["imageName"] as? String
+                    )
+                } ?? []
+            }
+        }
     }
 
     func fetchUserName() {
-        if let userId = Auth.auth().currentUser?.uid {
-            let db = Firestore.firestore()
-            db.collection("guardians").document(userId)
-                .getDocument { document, _ in
-                    if let document = document, document.exists {
-                        firstName = document.data()?["FirstName"] as? String ?? "Guest"
-                    }
-                }
+        guard let userId = Auth.auth().currentUser?.uid else { return }
+        let db = Firestore.firestore()
+
+        db.collection("guardians").document(userId).getDocument { document, _ in
+            if let document = document, document.exists,
+               let fetchedFirstName = document.data()?["FirstName"] as? String {
+                firstName = fetchedFirstName
+            }
         }
     }
 }
